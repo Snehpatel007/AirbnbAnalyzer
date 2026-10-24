@@ -10,23 +10,28 @@ from src.pipeline.collector import MarketCollector
 logger = logging.getLogger("airbnbanalyzer.scheduler")
 
 
-def scheduled_daily_ingestion():
+def scheduled_slot_ingestion(slot: str = "manual"):
     """
-    Job executed automatically on schedule (Daily 9 AM IST and active interval runs).
+    Job executed automatically on schedule for a specific collection slot:
+    '4pm' (16:00 IST), '8pm' (20:00 IST), '11.30pm' (23:30 IST), or 'manual'.
     """
     kolkata_tz = pytz.timezone(settings.market_config.timezone)
     now_ist = datetime.now(kolkata_tz)
     today_str = now_ist.strftime("%Y-%m-%d")
     
-    logger.info(f"Starting scheduled Airbnb ingestion for {today_str} at {now_ist.strftime('%H:%M:%S %Z')}...")
+    logger.info(f"Starting scheduled {slot} Airbnb ingestion for {today_str} at {now_ist.strftime('%H:%M:%S %Z')}...")
     try:
-        collector = MarketCollector(observation_date=today_str)
+        collector = MarketCollector(observation_date=today_str, snapshot_slot=slot)
         result = collector.run()
-        logger.info(f"Scheduled collection run completed successfully: {result}")
+        logger.info(f"Scheduled {slot} collection run completed successfully: {result}")
         return result
     except Exception as e:
-        logger.error(f"Error during scheduled collection: {e}", exc_info=True)
+        logger.error(f"Error during scheduled {slot} collection: {e}", exc_info=True)
         return None
+
+
+def scheduled_daily_ingestion():
+    return scheduled_slot_ingestion("manual")
 
 
 class MarketScheduler:
@@ -34,28 +39,44 @@ class MarketScheduler:
         self.scheduler = BackgroundScheduler()
         self.timezone = pytz.timezone(settings.market_config.timezone)
 
-    def start(self, auto_catchup: bool = True):
+    def start(self, auto_catchup: bool = False):
         if self.scheduler.running:
             logger.info("MarketScheduler is already running.")
             return
 
-        hour, minute = [int(p) for p in settings.market_config.collection_time_ist.split(":")]
-        trigger = CronTrigger(
-            hour=hour,
-            minute=minute,
-            timezone=self.timezone
-        )
+        # Slot 1: 4:00 PM IST (16:00)
         self.scheduler.add_job(
-            scheduled_daily_ingestion,
-            trigger=trigger,
-            id="daily_airbnb_collector",
-            name=f"Daily {hour:02d}:{minute:02d} IST Ahmedabad Airbnb Ingestion",
+            lambda: scheduled_slot_ingestion("4pm"),
+            trigger=CronTrigger(hour=16, minute=0, timezone=self.timezone),
+            id="cron_4pm_collector",
+            name="Daily 4:00 PM IST Ingestion (4pm Slot)",
             replace_existing=True,
-            misfire_grace_time=86400  # 24 hours grace time
+            misfire_grace_time=86400,
         )
+
+        # Slot 2: 8:00 PM IST (20:00)
+        self.scheduler.add_job(
+            lambda: scheduled_slot_ingestion("8pm"),
+            trigger=CronTrigger(hour=20, minute=0, timezone=self.timezone),
+            id="cron_8pm_collector",
+            name="Daily 8:00 PM IST Ingestion (8pm Slot)",
+            replace_existing=True,
+            misfire_grace_time=86400,
+        )
+
+        # Slot 3: 11:30 PM IST (23:30)
+        self.scheduler.add_job(
+            lambda: scheduled_slot_ingestion("11.30pm"),
+            trigger=CronTrigger(hour=23, minute=30, timezone=self.timezone),
+            id="cron_11_30pm_collector",
+            name="Daily 11:30 PM IST Ingestion (11.30pm Slot)",
+            replace_existing=True,
+            misfire_grace_time=86400,
+        )
+
         self.scheduler.start()
         logger.info(
-            f"MarketScheduler started. Single daily ingestion scheduled at {hour:02d}:{minute:02d} {settings.market_config.timezone} everyday. All other auto triggers removed."
+            f"MarketScheduler started with 3 daily scheduled ingestion runs: 4:00 PM, 8:00 PM, and 11:30 PM {settings.market_config.timezone}."
         )
 
     def schedule_interval_job(self, minutes: int = 5, delay_minutes: int = 2):

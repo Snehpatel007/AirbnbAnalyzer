@@ -20,10 +20,24 @@ from src.models.database import (
     init_db
 )
 from src.models.schema import NaturalLanguageQueryRequest, NaturalLanguageQueryResponse
-from src.pipeline.collector import MarketCollector
+from src.pipeline.collector import MarketCollector, normalize_slot
 from src.agent.analyzer import MarketAnalysisAgent
 from src.reporting.daily_report import DailyReportGenerator
 from src.scheduler.runner import market_scheduler
+
+
+def resolve_slot_for_date(db: Session, date: str, requested_slot: Optional[str] = None) -> str:
+    if requested_slot and requested_slot.lower() not in ("latest", "all", "none", ""):
+        return normalize_slot(requested_slot)
+    row = (
+        db.query(DailyMarketMetric.snapshot_slot)
+        .filter(DailyMarketMetric.observation_date == date)
+        .order_by(DailyMarketMetric.id.desc())
+        .first()
+    )
+    if row and row[0]:
+        return row[0]
+    return "manual"
 
 BASE_DIR = Path(__file__).resolve().parent
 app = FastAPI(
@@ -126,10 +140,46 @@ def get_discovered_areas():
     }
 
 
+@app.get("/api/available-slots")
+def get_available_slots(
+    date: Optional[str] = Query(None, description="Observation date YYYY-MM-DD"),
+    db: Session = Depends(get_db)
+):
+    if not date:
+        latest = db.query(DailyMarketMetric.observation_date).order_by(desc(DailyMarketMetric.observation_date)).first()
+        date = latest[0] if latest else datetime.now().strftime("%Y-%m-%d")
+
+    rows = (
+        db.query(DailyMarketMetric.snapshot_slot)
+        .filter(DailyMarketMetric.observation_date == date)
+        .distinct()
+        .all()
+    )
+    slots_found = [r[0] for r in rows if r[0]]
+    ordered_standard = ["4pm", "8pm", "11.30pm", "manual"]
+    available_slots = [s for s in ordered_standard if s in slots_found] + [s for s in slots_found if s not in ordered_standard]
+    
+    latest_slot_row = (
+        db.query(DailyMarketMetric.snapshot_slot)
+        .filter(DailyMarketMetric.observation_date == date)
+        .order_by(DailyMarketMetric.id.desc())
+        .first()
+    )
+    latest_slot = latest_slot_row[0] if latest_slot_row else "manual"
+
+    return {
+        "observation_date": date,
+        "available_slots": available_slots,
+        "latest_slot": latest_slot,
+        "all_supported_slots": ["4pm", "8pm", "11.30pm", "manual"]
+    }
+
+
 @app.get("/api/overview")
 def get_market_overview(
     date: Optional[str] = Query(None, description="Observation date YYYY-MM-DD"),
     area: Optional[str] = Query("Ahmedabad", description="Area or 'Ahmedabad' overall"),
+    slot: Optional[str] = Query(None, description="Snapshot slot: 4pm, 8pm, 11.30pm, manual, or latest"),
     db: Session = Depends(get_db)
 ):
     # If date not specified, get latest
@@ -137,16 +187,29 @@ def get_market_overview(
         latest = db.query(DailyMarketMetric.observation_date).order_by(desc(DailyMarketMetric.observation_date)).first()
         date = latest[0] if latest else datetime.now().strftime("%Y-%m-%d")
 
+    target_slot = resolve_slot_for_date(db, date, slot)
     target_area = area or "Ahmedabad"
+
     metric = (
         db.query(DailyMarketMetric)
-        .filter(DailyMarketMetric.observation_date == date, DailyMarketMetric.area == target_area)
+        .filter(
+            DailyMarketMetric.observation_date == date,
+            DailyMarketMetric.snapshot_slot == target_slot,
+            DailyMarketMetric.area == target_area
+        )
         .first()
     )
 
     if not metric:
-        # Fallback to whatever metric exists for this date
-        metric = db.query(DailyMarketMetric).filter(DailyMarketMetric.observation_date == date).first()
+        # Fallback to target area without slot restriction, then any metric for date
+        metric = (
+            db.query(DailyMarketMetric)
+            .filter(DailyMarketMetric.observation_date == date, DailyMarketMetric.area == target_area)
+            .order_by(DailyMarketMetric.id.desc())
+            .first()
+        )
+    if not metric:
+        metric = db.query(DailyMarketMetric).filter(DailyMarketMetric.observation_date == date).order_by(DailyMarketMetric.id.desc()).first()
 
     # Calculate exact forward horizons (Tonight 1D, 7D, 14D, 30D)
     horizons = {}
@@ -161,12 +224,22 @@ def get_market_overview(
         d30 = (obs_dt + timedelta(days=29)).strftime("%Y-%m-%d")
 
         q = db.query(CalendarObservation.calendar_date, CalendarObservation.status, CalendarObservation.price).filter(
-            CalendarObservation.observation_date == date
+            CalendarObservation.observation_date == date,
+            CalendarObservation.snapshot_slot == target_slot
         )
         if target_area != "Ahmedabad":
             q = q.join(Listing, CalendarObservation.listing_id == Listing.listing_id).filter(Listing.area == target_area)
 
         rows = q.all()
+        # If no rows for this slot, fallback to any slot for that date
+        if not rows:
+            q_fallback = db.query(CalendarObservation.calendar_date, CalendarObservation.status, CalendarObservation.price).filter(
+                CalendarObservation.observation_date == date
+            )
+            if target_area != "Ahmedabad":
+                q_fallback = q_fallback.join(Listing, CalendarObservation.listing_id == Listing.listing_id).filter(Listing.area == target_area)
+            rows = q_fallback.all()
+
         def calc_h_stats(subset, label, date_range):
             if not subset:
                 return None
@@ -199,6 +272,7 @@ def get_market_overview(
         "city": settings.market_config.city,
         "selected_area": target_area,
         "observation_date": date,
+        "snapshot_slot": target_slot,
         "metric": metric.to_dict() if metric else None,
         "horizons": horizons,
     }
@@ -207,20 +281,36 @@ def get_market_overview(
 @app.get("/api/comparison")
 def get_area_comparison(
     date: Optional[str] = Query(None, description="Observation date YYYY-MM-DD"),
+    slot: Optional[str] = Query(None, description="Snapshot slot: 4pm, 8pm, 11.30pm, manual, or latest"),
     db: Session = Depends(get_db)
 ):
     if not date:
         latest = db.query(DailyMarketMetric.observation_date).order_by(desc(DailyMarketMetric.observation_date)).first()
         date = latest[0] if latest else datetime.now().strftime("%Y-%m-%d")
 
+    target_slot = resolve_slot_for_date(db, date, slot)
+
     rows = (
         db.query(DailyMarketMetric)
-        .filter(DailyMarketMetric.observation_date == date, DailyMarketMetric.area != "Ahmedabad")
+        .filter(
+            DailyMarketMetric.observation_date == date,
+            DailyMarketMetric.snapshot_slot == target_slot,
+            DailyMarketMetric.area != "Ahmedabad"
+        )
         .order_by(DailyMarketMetric.active_listings.desc())
         .all()
     )
+    if not rows:
+        rows = (
+            db.query(DailyMarketMetric)
+            .filter(DailyMarketMetric.observation_date == date, DailyMarketMetric.area != "Ahmedabad")
+            .order_by(DailyMarketMetric.active_listings.desc())
+            .all()
+        )
+
     return {
         "observation_date": date,
+        "snapshot_slot": target_slot,
         "areas": [r.to_dict() for r in rows]
     }
 
@@ -228,21 +318,33 @@ def get_area_comparison(
 @app.get("/api/trends")
 def get_market_trends(
     area: Optional[str] = Query("Ahmedabad", description="Tracked area or Ahmedabad overall"),
+    slot: Optional[str] = Query(None, description="Snapshot slot: 4pm, 8pm, 11.30pm, manual, or latest"),
     days: int = Query(30, ge=7, le=90),
     db: Session = Depends(get_db)
 ):
     target_area = area or "Ahmedabad"
-    rows = (
-        db.query(DailyMarketMetric)
-        .filter(DailyMarketMetric.area == target_area)
-        .order_by(DailyMarketMetric.observation_date.desc())
-        .limit(days)
-        .all()
-    )
+    q = db.query(DailyMarketMetric).filter(DailyMarketMetric.area == target_area)
+    if slot and slot.lower() not in ("latest", "all", ""):
+        norm_slot = normalize_slot(slot)
+        q = q.filter(DailyMarketMetric.snapshot_slot == norm_slot)
+
+    rows = q.order_by(DailyMarketMetric.observation_date.desc(), DailyMarketMetric.id.desc()).all()
+
+    # Deduplicate: if slot is 'latest' or unspecified, return at most 1 metric per observation_date (latest)
+    seen_dates = set()
+    deduped = []
+    for r in rows:
+        if r.observation_date not in seen_dates:
+            seen_dates.add(r.observation_date)
+            deduped.append(r)
+        if len(deduped) >= days:
+            break
+
     # Reverse to chronological order for charts
-    ordered = list(reversed(rows))
+    ordered = list(reversed(deduped))
     return {
         "area": target_area,
+        "snapshot_slot": slot or "latest",
         "data": [r.to_dict() for r in ordered]
     }
 
@@ -253,6 +355,7 @@ def get_listings(
     is_active: Optional[bool] = Query(True),
     search: Optional[str] = Query(None, description="Search by listing ID, title, or area"),
     date: Optional[str] = Query(None, description="Observation date YYYY-MM-DD for occupancy calculations"),
+    slot: Optional[str] = Query(None, description="Snapshot slot: 4pm, 8pm, 11.30pm, manual, or latest"),
     limit: int = Query(50, le=200),
     db: Session = Depends(get_db)
 ):
@@ -318,10 +421,12 @@ def get_listings(
         total = query.count()
         results = query.order_by(Listing.review_count.desc()).limit(limit).all()
 
-    # Determine observation date for forward horizon occupancy calculation
+    # Determine observation date and slot for forward horizon occupancy calculation
     if not date:
         latest = db.query(DailyMarketMetric.observation_date).order_by(desc(DailyMarketMetric.observation_date)).first()
         date = latest[0] if latest else datetime.now().strftime("%Y-%m-%d")
+
+    target_slot = resolve_slot_for_date(db, date, slot)
 
     obs_dt = datetime.strptime(date, "%Y-%m-%d")
     d1 = date
@@ -332,9 +437,21 @@ def get_listings(
     l_ids = [l.listing_id for l in results]
     cal_rows = (
         db.query(CalendarObservation.listing_id, CalendarObservation.calendar_date, CalendarObservation.status)
-        .filter(CalendarObservation.listing_id.in_(l_ids), CalendarObservation.observation_date == date)
+        .filter(
+            CalendarObservation.listing_id.in_(l_ids),
+            CalendarObservation.observation_date == date,
+            CalendarObservation.snapshot_slot == target_slot
+        )
         .all()
     )
+    # If no cal_rows for this slot, fallback to any slot for that date
+    if not cal_rows:
+        cal_rows = (
+            db.query(CalendarObservation.listing_id, CalendarObservation.calendar_date, CalendarObservation.status)
+            .filter(CalendarObservation.listing_id.in_(l_ids), CalendarObservation.observation_date == date)
+            .all()
+        )
+
     cal_by_id = {}
     for lid, c_dt, stat in cal_rows:
         cal_by_id.setdefault(lid, {})[c_dt] = stat
@@ -361,6 +478,7 @@ def get_listings(
         "total": total,
         "returned": len(listings_data),
         "observation_date": date,
+        "snapshot_slot": target_slot,
         "listings": listings_data
     }
 
@@ -377,16 +495,22 @@ def get_collection_runs(
 @app.get("/api/daily-report")
 def get_daily_report(
     date: Optional[str] = Query(None),
+    slot: Optional[str] = Query(None, description="Snapshot slot: 4pm, 8pm, 11.30pm, manual, or latest"),
     db: Session = Depends(get_db)
 ):
     rep_gen = DailyReportGenerator(db)
-    report_text = rep_gen.generate_report(date)
-    return {"observation_date": date or datetime.now().strftime("%Y-%m-%d"), "report": report_text}
+    report_text = rep_gen.generate_report(date, snapshot_slot=slot)
+    return {
+        "observation_date": date or datetime.now().strftime("%Y-%m-%d"),
+        "snapshot_slot": slot or "latest",
+        "report": report_text
+    }
 
 
 @app.post("/api/trigger-collection")
 def trigger_daily_collection(
     date: Optional[str] = Query(None),
+    slot: Optional[str] = Query("manual", description="Snapshot slot: 4pm, 8pm, 11.30pm, manual"),
     provider: Optional[str] = Query(None),
     fetch_calendars: Optional[bool] = Query(False),
     db: Session = Depends(get_db)
@@ -396,7 +520,8 @@ def trigger_daily_collection(
         db=db,
         observation_date=obs_date,
         provider_name=provider,
-        fetch_individual_calendars=fetch_calendars
+        fetch_individual_calendars=fetch_calendars,
+        snapshot_slot=slot
     )
     result = collector.run()
     return result

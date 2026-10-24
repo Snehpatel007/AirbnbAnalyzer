@@ -19,11 +19,25 @@ from src.pipeline.aggregator import DailyAggregator
 from src.pipeline.geocoder import geocoder
 
 
+def normalize_slot(slot: Optional[str]) -> str:
+    if not slot:
+        return "manual"
+    s = str(slot).strip().lower()
+    if s in ("4pm", "16:00", "16", "4:00pm", "4:00", "4"):
+        return "4pm"
+    if s in ("8pm", "20:00", "20", "8:00pm", "8:00", "8"):
+        return "8pm"
+    if s in ("11.30pm", "11:30pm", "23:30", "11:30", "11.30"):
+        return "11.30pm"
+    return "manual"
+
+
 class MarketCollector:
     """
     Orchestrates the Ahmedabad Airbnb daily collection pipeline.
     Executes listing discovery, master listing updates, calendar snapshot,
     data validation, metric aggregation, and collection run audit.
+    Supports distinct snapshot slots: '4pm', '8pm', '11.30pm', 'manual'.
     """
 
     def __init__(
@@ -32,10 +46,12 @@ class MarketCollector:
         observation_date: Optional[str] = None,
         provider_name: Optional[str] = None,
         fetch_individual_calendars: Optional[bool] = None,
+        snapshot_slot: Optional[str] = "manual",
     ):
         self.db = db or SessionLocal()
         self._owns_db = db is None
         self.observation_date = observation_date or datetime.now().strftime("%Y-%m-%d")
+        self.snapshot_slot = normalize_slot(snapshot_slot)
         self.provider = get_data_provider(provider_type=provider_name, observation_date=self.observation_date)
         self.horizon_days = settings.market_config.calendar_horizon_days
         self.inactivity_days = settings.market_config.inactivity_days_threshold
@@ -56,6 +72,7 @@ class MarketCollector:
             run_id=run_id,
             started_at=started_at,
             observation_date=self.observation_date,
+            snapshot_slot=self.snapshot_slot,
             status="RUNNING",
             provider=provider_name,
         )
@@ -218,29 +235,33 @@ class MarketCollector:
                         total_calendar_records += 1
 
             if new_calendar_obs:
-                # Remove prior calendar records for this observation date if re-running
+                # Remove prior calendar records for THIS observation date and THIS snapshot slot
                 self.db.query(CalendarObservation).filter(
-                    CalendarObservation.observation_date == self.observation_date
+                    CalendarObservation.observation_date == self.observation_date,
+                    CalendarObservation.snapshot_slot == self.snapshot_slot
                 ).delete()
                 self.db.commit()
+                for obs in new_calendar_obs:
+                    obs["snapshot_slot"] = self.snapshot_slot
                 self.db.bulk_insert_mappings(CalendarObservation, new_calendar_obs)
                 self.db.commit()
 
             # 4. Calculate Area Metrics
-            aggregator = DailyAggregator(self.db, self.observation_date)
+            aggregator = DailyAggregator(self.db, self.observation_date, snapshot_slot=self.snapshot_slot)
             for area, lids in active_listings_by_area.items():
                 area_metric = aggregator.calculate_for_area(area, len(lids), len(lids))
                 existing_metric = (
                     self.db.query(DailyMarketMetric)
                     .filter(
                         DailyMarketMetric.observation_date == self.observation_date,
+                        DailyMarketMetric.snapshot_slot == self.snapshot_slot,
                         DailyMarketMetric.area == area
                     )
                     .first()
                 )
                 if existing_metric:
                     for k, v in area_metric.to_dict().items():
-                        if k not in ("id", "observation_date", "area"):
+                        if k not in ("id", "observation_date", "snapshot_slot", "area"):
                             setattr(existing_metric, k, v)
                     area_metrics.append(existing_metric)
                 else:
@@ -263,17 +284,19 @@ class MarketCollector:
                     self.db.query(DailyMarketMetric)
                     .filter(
                         DailyMarketMetric.observation_date == self.observation_date,
+                        DailyMarketMetric.snapshot_slot == self.snapshot_slot,
                         DailyMarketMetric.area == city_label
                     )
                     .first()
                 )
                 if existing_city:
                     for k, v in city_metric.to_dict().items():
-                        if k not in ("id", "observation_date", "area"):
+                        if k not in ("id", "observation_date", "snapshot_slot", "area"):
                             setattr(existing_city, k, v)
                 else:
                     new_m = DailyMarketMetric(**city_metric.to_dict())
                     new_m.area = city_label
+                    new_m.snapshot_slot = self.snapshot_slot
                     self.db.add(new_m)
                 self.db.commit()
 
@@ -296,6 +319,7 @@ class MarketCollector:
             return {
                 "run_id": run_id,
                 "observation_date": self.observation_date,
+                "snapshot_slot": self.snapshot_slot,
                 "status": run_status,
                 "provider": provider_name,
                 "listings_discovered": total_discovered,

@@ -1,10 +1,48 @@
 import pytest
 from src.agent.analyzer import MarketAnalysisAgent
-from src.models.database import SessionLocal
+from src.models.database import SessionLocal, DailyMarketMetric, Base, engine
 
 
 def test_agent_answers():
     db = SessionLocal()
+    
+    # Seed mock metrics for testing agent logic
+    m1 = DailyMarketMetric(
+        observation_date="2026-10-24",
+        snapshot_slot="manual",
+        area="Bopal",
+        active_listings=40,
+        observed_unavailability_rate=0.75,
+        adr=3500.0,
+        revpar_proxy=2625.0,
+        coverage_rate=1.0,
+        status="COMPLETE",
+    )
+    m2 = DailyMarketMetric(
+        observation_date="2026-10-24",
+        snapshot_slot="manual",
+        area="Shilaj",
+        active_listings=25,
+        observed_unavailability_rate=0.60,
+        adr=4200.0,
+        revpar_proxy=2520.0,
+        coverage_rate=1.0,
+        status="COMPLETE",
+    )
+    m3 = DailyMarketMetric(
+        observation_date="2026-10-24",
+        snapshot_slot="manual",
+        area="Ghuma",
+        active_listings=20,
+        observed_unavailability_rate=0.70,
+        adr=3100.0,
+        revpar_proxy=2170.0,
+        coverage_rate=1.0,
+        status="COMPLETE",
+    )
+    db.add_all([m1, m2, m3])
+    db.commit()
+
     agent = MarketAnalysisAgent(db)
 
     # 1. Compare Bopal vs Shilaj
@@ -36,4 +74,6 @@ def test_agent_answers():
     assert "Lease Model Viability" in res6["answer"]
 
     agent.close()
+    db.query(DailyMarketMetric).delete()
+    db.commit()
     db.close()

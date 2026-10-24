@@ -31,14 +31,14 @@
           <span>LIVE OBSERVED TRACKER</span>
         </div>
         <h1 class="brand-title">Ahmedabad <span class="gradient-text">Airbnb Tracker</span></h1>
-        <p class="brand-subtitle">Lease-Model Operational Market Intelligence &bull; Daily 09:00 IST Ingestion</p>
+        <p class="brand-subtitle">Lease-Model Operational Market Intelligence &bull; Daily Ingestions: 4:00 PM, 8:00 PM, 11:30 PM IST</p>
       </div>
 
       <div class="header-status-group">
         <div class="ist-clock-card" id="ist-clock-card">
           <span class="clock-label">AHMEDABAD (IST)</span>
           <span class="clock-time" id="live-ist-time">--:--:-- IST</span>
-          <span class="schedule-pill" id="scheduler-pill" title="Click to view scheduled jobs">⏱️ Next Ingestion: 5:00 PM IST</span>
+          <span class="schedule-pill" id="scheduler-pill" title="Click to view scheduled jobs">⏱️ Next Ingestion: --</span>
         </div>
         
         <div class="header-actions">
@@ -46,9 +46,9 @@
             <span class="btn-icon">⚡</span>
             <span>Trigger Ingestion</span>
           </button>
-          <button id="btn-open-report" class="btn btn-secondary" title="View 9 AM Daily Market Report">
+          <button id="btn-open-report" class="btn btn-secondary" title="View Daily Market Report">
             <span class="btn-icon">📋</span>
-            <span>9 AM Report</span>
+            <span>Market Report</span>
           </button>
           <button id="btn-view-runs" class="btn btn-outline" title="Audit Runs & Coverage">
             <span class="btn-icon">⏱️</span>
@@ -77,6 +77,19 @@
       <div class="filter-item">
         <label for="obs-date-input">Observation Date</label>
         <input type="date" id="obs-date-input" class="form-input">
+      </div>
+
+      <div class="filter-item">
+        <label for="slot-select">Collection Slot</label>
+        <div class="select-wrapper">
+          <select id="slot-select" class="form-select">
+            <option value="latest" selected>⚡ Latest Available</option>
+            <option value="4pm">4:00 PM IST (4pm)</option>
+            <option value="8pm">8:00 PM IST (8pm)</option>
+            <option value="11.30pm">11:30 PM IST (11.30pm)</option>
+            <option value="manual">Manual Ingestion</option>
+          </select>
+        </div>
       </div>
 
       <div class="filter-item">

@@ -75,24 +75,37 @@ function initSchedulerCountdown() {
         } else {
           timeLabel = `${m}m ${s < 10 ? '0' : ''}${s}s`;
         }
-        pill.textContent = `⏱️ Next Ingestion: In ${timeLabel} (5:00 PM IST)`;
+        let slotName = 'Next Run';
+        if (nextJob.name) {
+          if (nextJob.name.includes('4:00 PM') || nextJob.name.includes('4pm')) slotName = '4:00 PM IST';
+          else if (nextJob.name.includes('8:00 PM') || nextJob.name.includes('8pm')) slotName = '8:00 PM IST';
+          else if (nextJob.name.includes('11:30 PM') || nextJob.name.includes('11.30pm')) slotName = '11:30 PM IST';
+          else slotName = nextJob.name;
+        }
+        pill.textContent = `⏱️ Next Ingestion: In ${timeLabel} (${slotName})`;
         pill.style.background = 'rgba(16, 185, 129, 0.15)';
         pill.style.color = '#10b981';
       } else if (diffSec >= -60) {
-        pill.textContent = `⚡ 5:00 PM Ingestion running...`;
+        pill.textContent = `⚡ Scheduled Ingestion running...`;
         pill.style.background = 'rgba(239, 68, 68, 0.2)';
         pill.style.color = '#f87171';
       } else {
-        pill.textContent = `⏱️ Next Ingestion: 5:00 PM IST`;
+        pill.textContent = `⏱️ Next Ingestion: 4:00 PM, 8:00 PM, 11:30 PM IST`;
       }
     }
   }, 1000);
+}
+
+function getSelectedSlot() {
+  const slotSelect = document.getElementById('slot-select');
+  return slotSelect ? slotSelect.value : 'latest';
 }
 
 // 2. Event Listeners
 function initEventListeners() {
   const areaSelect = document.getElementById('area-select');
   const dateInput = document.getElementById('obs-date-input');
+  const slotSelect = document.getElementById('slot-select');
   
   if (areaSelect) {
     areaSelect.addEventListener('change', () => {
@@ -106,6 +119,15 @@ function initEventListeners() {
     dateInput.addEventListener('change', () => {
       loadDashboardData();
       loadAreaComparison();
+      loadMasterListings();
+    });
+  }
+
+  if (slotSelect) {
+    slotSelect.addEventListener('change', () => {
+      loadDashboardData();
+      loadAreaComparison();
+      loadTrendsChart();
       loadMasterListings();
     });
   }
@@ -203,9 +225,10 @@ async function loadDashboardData() {
   
   const area = areaSelect ? areaSelect.value : 'Ahmedabad';
   const date = dateInput ? dateInput.value : '';
+  const slot = getSelectedSlot();
 
   try {
-    const res = await fetch(`/api/overview?area=${encodeURIComponent(area)}&date=${encodeURIComponent(date)}`);
+    const res = await fetch(`/api/overview?area=${encodeURIComponent(area)}&date=${encodeURIComponent(date)}&slot=${encodeURIComponent(slot)}`);
     const data = await res.json();
     const metric = data.metric;
 
@@ -214,7 +237,7 @@ async function loadDashboardData() {
     }
 
     if (!metric) {
-      showToast('No snapshot found for selected date', 'error');
+      showToast(`No snapshot found for ${slot !== 'latest' ? slot + ' slot on ' : ''}${date || 'selected date'}`, 'error');
       return;
     }
 
@@ -299,9 +322,10 @@ async function loadDashboardData() {
 async function loadAreaComparison() {
   const dateInput = document.getElementById('obs-date-input');
   const date = dateInput ? dateInput.value : '';
+  const slot = getSelectedSlot();
 
   try {
-    const res = await fetch(`/api/comparison?date=${encodeURIComponent(date)}`);
+    const res = await fetch(`/api/comparison?date=${encodeURIComponent(date)}&slot=${encodeURIComponent(slot)}`);
     const data = await res.json();
     const tbody = document.getElementById('area-table-body');
     if (!tbody) return;
@@ -390,14 +414,16 @@ async function loadAreaComparison() {
 async function loadTrendsChart() {
   const areaSelect = document.getElementById('area-select');
   const area = areaSelect ? areaSelect.value : 'Ahmedabad';
+  const slot = getSelectedSlot();
 
   const titleEl = document.getElementById('chart-section-title');
   if (titleEl) {
-    titleEl.textContent = `${area} Multi-Horizon Market Trendlines`;
+    const slotSuffix = slot !== 'latest' ? ` (${slot.toUpperCase()})` : '';
+    titleEl.textContent = `${area} Multi-Horizon Market Trendlines${slotSuffix}`;
   }
 
   try {
-    const res = await fetch(`/api/trends?area=${encodeURIComponent(area)}&days=30`);
+    const res = await fetch(`/api/trends?area=${encodeURIComponent(area)}&days=30&slot=${encodeURIComponent(slot)}`);
     const data = await res.json();
     const rows = data.data || [];
 
@@ -590,9 +616,10 @@ async function loadMasterListings() {
   const dateInput = document.getElementById('obs-date-input');
   const area = areaSelect ? areaSelect.value : 'Ahmedabad';
   const date = dateInput ? dateInput.value : '';
+  const slot = getSelectedSlot();
 
   try {
-    const res = await fetch(`/api/listings?area=${encodeURIComponent(area)}&date=${encodeURIComponent(date)}&limit=100`);
+    const res = await fetch(`/api/listings?area=${encodeURIComponent(area)}&date=${encodeURIComponent(date)}&slot=${encodeURIComponent(slot)}&limit=100`);
     const data = await res.json();
     masterListingsCache = data.listings || [];
     renderListingsTable(masterListingsCache);
@@ -735,16 +762,18 @@ async function triggerIngestion() {
     btn.disabled = true;
     btn.innerHTML = `<span class="btn-icon">⏳</span><span>Ingesting...</span>`;
   }
-  showToast('Starting Ahmedabad Airbnb ingestion cycle...', 'success');
+  const dateInput = document.getElementById('obs-date-input');
+  const obsDate = dateInput ? dateInput.value : '';
+  const slot = getSelectedSlot();
+  const triggerSlot = slot === 'latest' ? 'manual' : slot;
+
+  showToast(`Starting Ahmedabad Airbnb ingestion cycle (${triggerSlot})...`, 'success');
 
   try {
-    const dateInput = document.getElementById('obs-date-input');
-    const obsDate = dateInput ? dateInput.value : '';
-    
-    const res = await fetch(`/api/trigger-collection?date=${encodeURIComponent(obsDate)}`, { method: 'POST' });
+    const res = await fetch(`/api/trigger-collection?date=${encodeURIComponent(obsDate)}&slot=${encodeURIComponent(triggerSlot)}`, { method: 'POST' });
     const result = await res.json();
 
-    showToast(`Ingestion complete! Discovered ${result.listings_discovered} listings, ${result.calendar_records} calendar days. Coverage: ${result.coverage_pct}%`, 'success');
+    showToast(`Ingestion complete for slot [${result.snapshot_slot || triggerSlot}]! Discovered ${result.listings_discovered} listings, ${result.calendar_records} calendar days. Coverage: ${result.coverage_pct}%`, 'success');
     
     // Refresh dashboard
     loadDashboardData();
@@ -763,18 +792,19 @@ async function triggerIngestion() {
   }
 }
 
-// 8. 9 AM Daily Report Modal
+// 8. Daily Market Report Modal
 async function openDailyReport() {
   const modal = document.getElementById('report-modal-overlay');
   const pre = document.getElementById('report-text-content');
   const dateInput = document.getElementById('obs-date-input');
   const obsDate = dateInput ? dateInput.value : '';
+  const slot = getSelectedSlot();
 
   if (modal) modal.classList.add('open');
-  if (pre) pre.textContent = 'Generating 9 AM market intelligence report...';
+  if (pre) pre.textContent = `Generating market intelligence report for ${slot !== 'latest' ? slot + ' slot' : 'latest snapshot'}...`;
 
   try {
-    const res = await fetch(`/api/daily-report?date=${encodeURIComponent(obsDate)}`);
+    const res = await fetch(`/api/daily-report?date=${encodeURIComponent(obsDate)}&slot=${encodeURIComponent(slot)}`);
     const data = await res.json();
     if (pre) pre.textContent = data.report || 'No report available.';
   } catch (err) {
@@ -786,7 +816,7 @@ function copyReportToClipboard() {
   const pre = document.getElementById('report-text-content');
   if (pre) {
     navigator.clipboard.writeText(pre.textContent).then(() => {
-      showToast('9 AM report copied to clipboard!', 'success');
+      showToast('Daily report copied to clipboard!', 'success');
     });
   }
 }
@@ -840,6 +870,7 @@ async function openRunsAudit() {
         <td>
           <div style="font-weight: 600; font-size: 0.88rem; color: #f1f5f9;">${r.observation_date}</div>
           <div style="font-size: 0.75rem; color: #38bdf8; font-family: monospace; margin-top: 2px;">⏱️ ${timeDisplay || '--:-- IST'}</div>
+          <div style="margin-top: 4px;"><span class="badge-count" style="background: rgba(14,165,233,0.18); color: #38bdf8; font-size: 0.72rem; padding: 2px 7px; border-radius: 4px;">Slot: ${r.snapshot_slot || 'manual'}</span></div>
         </td>
         <td><span style="font-family: monospace; font-size: 0.75rem;">${r.run_id.substring(0, 8)}...</span></td>
         <td><span class="badge-count">${r.provider}</span></td>

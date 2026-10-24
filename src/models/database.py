@@ -91,12 +91,13 @@ class CalendarObservation(Base):
     minimum_stay = Column(Integer, default=1)
     raw_status = Column(String(64), nullable=True)
     source = Column(String(64), default="AIRBNB_OBSERVED", nullable=False)
+    snapshot_slot = Column(String(16), default="manual", nullable=False, index=True)  # 4pm, 8pm, 11.30pm, manual
 
     listing = relationship("Listing", back_populates="calendar_observations")
 
     __table_args__ = (
-        UniqueConstraint("listing_id", "calendar_date", "observation_date", name="uix_listing_cal_obs_date"),
-        Index("idx_obs_area_date", "observation_date", "calendar_date"),
+        UniqueConstraint("listing_id", "calendar_date", "observation_date", "snapshot_slot", name="uix_listing_cal_obs_slot"),
+        Index("idx_obs_area_date_slot", "observation_date", "snapshot_slot", "calendar_date"),
     )
 
     def to_dict(self):
@@ -104,6 +105,7 @@ class CalendarObservation(Base):
             "id": self.id,
             "listing_id": self.listing_id,
             "observation_date": self.observation_date,
+            "snapshot_slot": self.snapshot_slot,
             "calendar_date": self.calendar_date,
             "status": self.status,
             "bookable": self.bookable,
@@ -119,6 +121,7 @@ class DailyMarketMetric(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     observation_date = Column(String(10), nullable=False, index=True)  # YYYY-MM-DD
+    snapshot_slot = Column(String(16), default="manual", nullable=False, index=True)  # 4pm, 8pm, 11.30pm, manual
     area = Column(String(128), nullable=False, index=True)  # "Ahmedabad" or specific area name
     active_listings = Column(Integer, default=0, nullable=False)
     available_listing_nights = Column(Integer, default=0, nullable=False)
@@ -166,14 +169,15 @@ class DailyMarketMetric(Base):
     nights_unavail_7d = Column(Integer, default=0)
 
     __table_args__ = (
-        UniqueConstraint("observation_date", "area", name="uix_metric_obs_date_area"),
-        Index("idx_metric_area_date", "area", "observation_date"),
+        UniqueConstraint("observation_date", "snapshot_slot", "area", name="uix_metric_obs_date_slot_area"),
+        Index("idx_metric_area_date_slot", "area", "observation_date", "snapshot_slot"),
     )
 
     def to_dict(self):
         return {
             "id": self.id,
             "observation_date": self.observation_date,
+            "snapshot_slot": self.snapshot_slot,
             "area": self.area,
             "active_listings": self.active_listings,
             "available_listing_nights": self.available_listing_nights,
@@ -221,6 +225,7 @@ class CollectionRun(Base):
     started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     completed_at = Column(DateTime, nullable=True)
     observation_date = Column(String(10), nullable=False, index=True)
+    snapshot_slot = Column(String(16), default="manual", nullable=False, index=True)  # 4pm, 8pm, 11.30pm, manual
     status = Column(String(32), default="RUNNING", nullable=False)  # RUNNING, SUCCESS, PARTIAL, FAILED
     listings_discovered = Column(Integer, default=0)
     calendar_records_collected = Column(Integer, default=0)
@@ -250,6 +255,7 @@ class CollectionRun(Base):
             "started_at_ist": started_ist,
             "completed_at_ist": completed_ist,
             "observation_date": self.observation_date,
+            "snapshot_slot": self.snapshot_slot,
             "status": self.status,
             "listings_discovered": self.listings_discovered,
             "calendar_records_collected": self.calendar_records_collected,

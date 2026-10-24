@@ -14,30 +14,35 @@ class DailyReportGenerator:
         self.db = db or SessionLocal()
         self._owns_db = db is None
 
-    def generate_report(self, observation_date: Optional[str] = None) -> str:
+    def generate_report(self, observation_date: Optional[str] = None, snapshot_slot: Optional[str] = None) -> str:
         date_str = observation_date or datetime.now().strftime("%Y-%m-%d")
         dt = datetime.strptime(date_str, "%Y-%m-%d")
         date_formatted = dt.strftime("%d %b %Y")
 
-        city_metric = (
+        city_q = (
             self.db.query(DailyMarketMetric)
             .filter(
                 DailyMarketMetric.observation_date == date_str,
                 DailyMarketMetric.area == "Ahmedabad",
             )
-            .first()
         )
-
-        area_metrics = (
+        area_q = (
             self.db.query(DailyMarketMetric)
             .filter(
                 DailyMarketMetric.observation_date == date_str,
                 DailyMarketMetric.area != "Ahmedabad",
             )
-            .order_by(DailyMarketMetric.active_listings.desc())
-            .all()
         )
+        if snapshot_slot and snapshot_slot.lower() not in ("latest", "all", ""):
+            city_q = city_q.filter(DailyMarketMetric.snapshot_slot == snapshot_slot)
+            area_q = area_q.filter(DailyMarketMetric.snapshot_slot == snapshot_slot)
+        else:
+            city_q = city_q.order_by(DailyMarketMetric.id.desc())
 
+        city_metric = city_q.first()
+        area_metrics = area_q.order_by(DailyMarketMetric.active_listings.desc()).all()
+
+        slot_label = f" (Slot: {city_metric.snapshot_slot})" if city_metric and hasattr(city_metric, "snapshot_slot") else ""
         if not city_metric:
             return f"Ahmedabad Airbnb — {date_formatted}\n\nNo market snapshot found for {date_str}."
 

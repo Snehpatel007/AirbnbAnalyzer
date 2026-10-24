@@ -13,9 +13,10 @@ class DailyAggregator:
     2. Ahmedabad overall (City-wide aggregate strictly of configured areas)
     """
 
-    def __init__(self, db: Session, observation_date: str):
+    def __init__(self, db: Session, observation_date: str, snapshot_slot: str = "manual"):
         self.db = db
         self.observation_date = observation_date
+        self.snapshot_slot = snapshot_slot
 
     def _get_past_metric(self, area: str, days_ago: int) -> Optional[DailyMarketMetric]:
         try:
@@ -23,7 +24,11 @@ class DailyAggregator:
             past_date = (curr_dt - timedelta(days=days_ago)).strftime("%Y-%m-%d")
             return (
                 self.db.query(DailyMarketMetric)
-                .filter(DailyMarketMetric.area == area, DailyMarketMetric.observation_date == past_date)
+                .filter(
+                    DailyMarketMetric.area == area,
+                    DailyMarketMetric.observation_date == past_date,
+                    DailyMarketMetric.snapshot_slot == self.snapshot_slot,
+                )
                 .first()
             )
         except Exception:
@@ -37,13 +42,13 @@ class DailyAggregator:
         the exact matrix for Tonight (1D), Next 2 Days (2D), Next 3 Days (3D), and Next 7 Days (7D).
         Example: in Sola with 3 properties: (3/7 + 1/7 + 6/7) = 10/21 occupancy.
         """
-        # Calendar records for this area on observation_date
         records = (
             self.db.query(CalendarObservation)
             .join(Listing, CalendarObservation.listing_id == Listing.listing_id)
             .filter(
                 Listing.area == area,
                 CalendarObservation.observation_date == self.observation_date,
+                CalendarObservation.snapshot_slot == self.snapshot_slot,
             )
             .all()
         )
@@ -93,6 +98,7 @@ class DailyAggregator:
 
         metric = DailyMarketMetric(
             observation_date=self.observation_date,
+            snapshot_slot=self.snapshot_slot,
             area=area,
             active_listings=observed_listings,
             available_listing_nights=available_nights_1d,
@@ -207,6 +213,7 @@ class DailyAggregator:
 
         return DailyMarketMetric(
             observation_date=self.observation_date,
+            snapshot_slot=self.snapshot_slot,
             area="Ahmedabad",
             active_listings=observed_cnt,
             available_listing_nights=total_available,

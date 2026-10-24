@@ -22,6 +22,7 @@ def main():
     # Command: run-collection
     collect_parser = subparsers.add_parser("run-collection", help="Run on-demand market collection")
     collect_parser.add_argument("--date", help="Observation date (YYYY-MM-DD)", default=None)
+    collect_parser.add_argument("--slot", help="Snapshot slot (4pm, 8pm, 11.30pm, manual)", default="manual")
     collect_parser.add_argument("--provider", help="Provider override", default=None)
     collect_parser.add_argument("--fetch-calendars", action="store_true", help="Fetch 275 individual calendars (bypassed by default to protect IP)")
 
@@ -56,6 +57,7 @@ def main():
             observation_date=args.date,
             provider_name=args.provider,
             fetch_individual_calendars=getattr(args, "fetch_calendars", False),
+            snapshot_slot=getattr(args, "slot", "manual"),
         )
         res = collector.run()
         print("✅ Daily Collection Result:")
