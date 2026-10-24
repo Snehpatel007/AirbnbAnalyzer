@@ -2,7 +2,7 @@ import json
 import os
 from pathlib import Path
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from dotenv import load_dotenv
 
 # Load .env if present
@@ -60,11 +60,32 @@ def load_market_config() -> MarketConfig:
     )
 
 
+def normalize_database_url(url: str) -> str:
+    if not url:
+        return url
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg2://", 1)
+    if url.startswith("postgresql://") and not url.startswith("postgresql+"):
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return url
+
+
 class Settings(BaseModel):
     app_name: str = "Ahmedabad & Gandhinagar Airbnb Daily Market Tracker"
     db_path: Path = DATA_DIR / "airbnbanalyzer.db"
-    database_url: str = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'airbnbanalyzer.db'}")
+    database_url: str = Field(
+        default_factory=lambda: normalize_database_url(
+            os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'airbnbanalyzer.db'}")
+        )
+    )
     market_config: MarketConfig = Field(default_factory=load_market_config)
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def clean_database_url(cls, v: str) -> str:
+        if isinstance(v, str):
+            return normalize_database_url(v)
+        return v
     
     # Provider Settings: "direct_web", "hybrid", "rapidapi", "apify", "simulation"
     data_provider: str = os.getenv("DATA_PROVIDER", "direct_web")
