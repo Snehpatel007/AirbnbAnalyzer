@@ -271,6 +271,10 @@ async function loadDashboardData() {
 
     // ADR
     document.getElementById('kpi-adr').textContent = `₹${Math.round(metric.adr).toLocaleString()}`;
+    const adrSub = document.getElementById('kpi-adr-subtext');
+    if (adrSub) {
+      adrSub.textContent = `Nightly base rate for tonight (${data.observation_date || 'tonight'})`;
+    }
 
     // RevPAR Proxy
     document.getElementById('kpi-revpar').textContent = `₹${Math.round(metric.revpar_proxy).toLocaleString()}`;
@@ -676,8 +680,8 @@ function renderListingsTable(listings) {
       <td class="text-center"><strong>${l.bedrooms || 2} BHK</strong></td>
       <td class="text-center">${l.beds || 2} Beds</td>
       <td class="text-center"><span class="amenity-pill">📶 Wi-Fi</span> <span class="amenity-pill">❄️ AC</span></td>
-      <td class="text-right">${l.rating ? `★ ${l.rating.toFixed(2)}` : '—'}</td>
-      <td class="text-right">${l.review_count || 0}</td>
+      <td class="text-right" style="font-weight: 600; color: #fbbf24;">${l.rating ? `★ ${Number(l.rating).toFixed(2)}` : '<span class="text-muted">—</span>'}</td>
+      <td class="text-right" style="font-weight: 600; color: #f1f5f9;">${l.review_count !== undefined && l.review_count !== null ? Number(l.review_count).toLocaleString() : '0'}</td>
       <td class="text-center">
         <a href="${airbnbUrl}" target="_blank" rel="noopener noreferrer" class="airbnb-view-btn" title="View property on Airbnb">
           <span>Airbnb ↗</span>
