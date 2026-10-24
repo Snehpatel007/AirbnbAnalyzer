@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: airbnb-analyzer
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py run-server --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SCHEDULER_ENABLED
+        value: "true"
+      - key: COLLECTION_TIME_IST
+        value: "01:00"
+      - key: FETCH_INDIVIDUAL_CALENDARS
+        value: "false"

@@ -1,0 +1,20 @@
+{
+  "api_key": "d306zoyjsyarp7ifhu67rjxn52tv0t20",
+  "cookies": {
+    "_user_attributes": "%7B%22curr%22%3A%22INR%22%7D",
+    "bev": "1792773720_EAMThhOWExM2Q3ZT",
+    "datadome": "R7YUvTRujtv9X6Qfz7vU3iYTpI~bQzS9OJ15vVaUE41iflD6~tu4zuXEbEEuMCFAyqQNRGw47A4R3_QDb2zVSIFH5c87PcRC3NvKOtiUjkyA0Xq9CX66EkXZVvJ54pkFnC6jXuU9fakFQPts9i_jJl",
+    "everest_cookie": "1792773720.EAMGM2NGJmZTVkNTYzMD.EGJUV-ybprDhRSE4hhyrw4fQCNp1NKJ_Q0w7aynHDXc"
+  },
+  "headers": {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "Accept-Language": "en-IN,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate",
+    "X-Airbnb-API-Key": "d306zoyjsyarp7ifhu67rjxn52tv0t20",
+    "X-Airbnb-GraphQL-Platform": "web",
+    "X-Airbnb-GraphQL-Platform-Client": "minimalist-niobe",
+    "X-CSRF-Without-Token": "1"
+  },
+  "source": "AUTO_BOOTSTRAP",
+  "updated_at": "2026-10-23T16:42:00.980095"
+}

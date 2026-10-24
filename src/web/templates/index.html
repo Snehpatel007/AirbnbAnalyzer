@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ahmedabad Airbnb Daily Market Tracker — Real-Time Observed Intelligence</title>
+  <meta name="description" content="Production-ready daily market intelligence tracker for Ahmedabad Airbnb listings and calendar availability, engineered for lease-model business evaluation.">
+  
+  <!-- Google Fonts: Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="/static/css/styles.css?v=3.6">
+</head>
+<body class="dark-theme">
+  <!-- Animated Background Gradient Aura -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="ambient-glow glow-3"></div>
+
+  <header class="app-header" id="app-header">
+    <div class="header-container">
+      <div class="brand-group">
+        <div class="brand-badge">
+          <span class="pulse-dot"></span>
+          <span>LIVE OBSERVED TRACKER</span>
+        </div>
+        <h1 class="brand-title">Ahmedabad <span class="gradient-text">Airbnb Tracker</span></h1>
+        <p class="brand-subtitle">Lease-Model Operational Market Intelligence &bull; Daily 09:00 IST Ingestion</p>
+      </div>
+
+      <div class="header-status-group">
+        <div class="ist-clock-card" id="ist-clock-card">
+          <span class="clock-label">AHMEDABAD (IST)</span>
+          <span class="clock-time" id="live-ist-time">--:--:-- IST</span>
+          <span class="schedule-pill" id="scheduler-pill" title="Click to view scheduled jobs">⏱️ Next Ingestion: 1:00 AM IST</span>
+        </div>
+        
+        <div class="header-actions">
+          <button id="btn-trigger-collection" class="btn btn-primary" title="Trigger instant ingestion">
+            <span class="btn-icon">⚡</span>
+            <span>Trigger Ingestion</span>
+          </button>
+          <button id="btn-open-report" class="btn btn-secondary" title="View 9 AM Daily Market Report">
+            <span class="btn-icon">📋</span>
+            <span>9 AM Report</span>
+          </button>
+          <button id="btn-view-runs" class="btn btn-outline" title="Audit Runs & Coverage">
+            <span class="btn-icon">⏱️</span>
+            <span>Audit Runs</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Control & Filter Bar -->
+  <section class="controls-section" id="controls-section">
+    <div class="controls-container">
+      <div class="filter-item">
+        <label for="area-select">Tracked Market Area</label>
+        <div class="select-wrapper">
+          <select id="area-select" class="form-select">
+            <option value="Ahmedabad" selected>Ahmedabad (City-Wide)</option>
+            {% for a in areas %}
+              <option value="{{ a }}">{{ a }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="filter-item">
+        <label for="obs-date-input">Observation Date</label>
+        <input type="date" id="obs-date-input" class="form-input">
+      </div>
+
+      <div class="filter-item">
+        <label>Primary Source</label>
+        <div class="source-tag">
+          <span class="tag-status live"></span>
+          <span id="active-provider-label">AIRBNB_OBSERVED</span>
+        </div>
+      </div>
+
+      <div class="filter-item">
+        <label>Global Filters Applied</label>
+        <div class="global-filters-badge-group">
+          <span class="filter-chip">🛏️ 2+ Bedrooms</span>
+          <span class="filter-chip">🛌 2+ Beds</span>
+          <span class="filter-chip">📶 Wi-Fi</span>
+          <span class="filter-chip">❄️ Air Conditioned</span>
+        </div>
+      </div>
+
+      <div class="filter-item ml-auto">
+        <label>AI Leasing Analyst</label>
+        <button id="btn-toggle-ai" class="btn btn-ai-glow">
+          <span class="btn-icon">✨</span>
+          <span>Ask AI Analyst</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content Layout -->
+  <main class="main-content" id="main-content">
+    
+    <!-- Primary KPI Ribbon -->
+    <section class="kpi-grid" id="kpi-grid">
+      <!-- Active Listings -->
+      <div class="kpi-card" id="card-active-listings">
+        <div class="kpi-header">
+          <span class="kpi-title">Active Listings</span>
+          <span class="kpi-icon">🏠</span>
+        </div>
+        <div class="kpi-value" id="kpi-active-listings">--</div>
+        <div class="kpi-footer">
+          <span class="trend-badge" id="badge-listings-7d">7D: --</span>
+          <span class="trend-badge" id="badge-listings-30d">30D: --</span>
+        </div>
+      </div>
+
+      <!-- Observed Unavailability Rate -->
+      <div class="kpi-card" id="card-unavailability">
+        <div class="kpi-header">
+          <span class="kpi-title">Tonight's Unavailability Rate</span>
+          <span class="kpi-badge warning" title="Observed availability status for tonight's actual night">Single-Night Actual</span>
+        </div>
+        <div class="kpi-value" id="kpi-unavailability">--%</div>
+        <div class="kpi-footer">
+          <span class="trend-badge" id="badge-unavail-7d">7D: -- pp</span>
+          <span class="trend-badge" id="badge-unavail-30d">30D: -- pp</span>
+        </div>
+      </div>
+
+      <!-- ADR -->
+      <div class="kpi-card" id="card-adr">
+        <div class="kpi-header">
+          <span class="kpi-title">Tonight's Observed ADR</span>
+          <span class="kpi-badge neutral">Tonight's Base</span>
+        </div>
+        <div class="kpi-value" id="kpi-adr">₹--</div>
+        <div class="kpi-footer">
+          <span class="kpi-subtext">Nightly base rate for tonight (04–05 Oct)</span>
+        </div>
+      </div>
+
+      <!-- Observed RevPAR Proxy -->
+      <div class="kpi-card highlight-card" id="card-revpar">
+        <div class="kpi-header">
+          <span class="kpi-title">Tonight's RevPAR Proxy</span>
+          <span class="kpi-badge purple">Daily Performance</span>
+        </div>
+        <div class="kpi-value" id="kpi-revpar">₹--</div>
+        <div class="kpi-footer">
+          <span class="kpi-subtext" id="kpi-monthly-rev">Tonight: ADR × Unavailability Rate</span>
+        </div>
+      </div>
+
+      <!-- Data Quality & Coverage -->
+      <div class="kpi-card" id="card-coverage">
+        <div class="kpi-header">
+          <span class="kpi-title">Observation Coverage</span>
+          <span class="coverage-status-pill" id="kpi-run-status">COMPLETE</span>
+        </div>
+        <div class="kpi-value" id="kpi-coverage">--%</div>
+        <div class="kpi-footer">
+          <span class="kpi-subtext" id="kpi-coverage-sub">Valid Active Coverage</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Multi-Horizon Occupancy & Performance Matrix Section -->
+    <section class="card-panel mb-6" id="horizon-matrix-section">
+      <div class="panel-header mb-3">
+        <div>
+          <h2 class="panel-title" style="display: flex; align-items: center; gap: 0.5rem;">
+            <span>🗓️</span> Multi-Horizon Occupancy & Performance Matrix
+          </h2>
+          <p class="panel-subtitle">
+            Observed real occupancy rate = <code>Total Occupied Nights / (Active Properties &times; Days Window)</code>
+          </p>
+        </div>
+        <div class="matrix-source-pill">
+          <span>● Actual Calendar Observations</span>
+        </div>
+      </div>
+
+      <div class="matrix-cards-grid">
+        <!-- 1D Tonight -->
+        <div class="matrix-card" id="card-matrix-1d">
+          <div class="matrix-card-header">
+            <span class="matrix-horizon-tag tag-1d">🌙 Tonight (1 Day)</span>
+            <span class="matrix-formula-badge" id="formula-badge-1d">-- / (-- &times; 1)</span>
+          </div>
+          <div class="matrix-rate" id="matrix-rate-1d">--%</div>
+          <div class="matrix-fraction" id="matrix-fraction-1d">-- / -- occupied nights</div>
+          <div class="matrix-meta">
+            <span>ADR: <strong id="matrix-adr-1d">₹--</strong></span>
+            <span>RevPAR: <strong class="revpar-color" id="matrix-revpar-1d">₹--</strong></span>
+          </div>
+        </div>
+
+        <!-- 2D Next 2 Days -->
+        <div class="matrix-card" id="card-matrix-2d">
+          <div class="matrix-card-header">
+            <span class="matrix-horizon-tag tag-2d">⚡ Next 2 Days (48h)</span>
+            <span class="matrix-formula-badge" id="formula-badge-2d">-- / (-- &times; 2)</span>
+          </div>
+          <div class="matrix-rate" id="matrix-rate-2d">--%</div>
+          <div class="matrix-fraction" id="matrix-fraction-2d">-- / -- occupied nights</div>
+          <div class="matrix-meta">
+            <span>ADR: <strong id="matrix-adr-2d">₹--</strong></span>
+            <span>RevPAR: <strong class="revpar-color" id="matrix-revpar-2d">₹--</strong></span>
+          </div>
+        </div>
+
+        <!-- 3D Next 3 Days -->
+        <div class="matrix-card" id="card-matrix-3d">
+          <div class="matrix-card-header">
+            <span class="matrix-horizon-tag tag-3d">📅 Next 3 Days (72h)</span>
+            <span class="matrix-formula-badge" id="formula-badge-3d">-- / (-- &times; 3)</span>
+          </div>
+          <div class="matrix-rate" id="matrix-rate-3d">--%</div>
+          <div class="matrix-fraction" id="matrix-fraction-3d">-- / -- occupied nights</div>
+          <div class="matrix-meta">
+            <span>ADR: <strong id="matrix-adr-3d">₹--</strong></span>
+            <span>RevPAR: <strong class="revpar-color" id="matrix-revpar-3d">₹--</strong></span>
+          </div>
+        </div>
+
+        <!-- 7D Next 7 Days -->
+        <div class="matrix-card" id="card-matrix-7d">
+          <div class="matrix-card-header">
+            <span class="matrix-horizon-tag tag-7d">🗓️ Next 7 Days (1 Week)</span>
+            <span class="matrix-formula-badge" id="formula-badge-7d">-- / (-- &times; 7)</span>
+          </div>
+          <div class="matrix-rate" id="matrix-rate-7d">--%</div>
+          <div class="matrix-fraction" id="matrix-fraction-7d">-- / -- occupied nights</div>
+          <div class="matrix-meta">
+            <span>ADR: <strong id="matrix-adr-7d">₹--</strong></span>
+            <span>RevPAR: <strong class="revpar-color" id="matrix-revpar-7d">₹--</strong></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Multi-Horizon Daily Market Trendlines (4 Distinct Plots) -->
+    <section class="card-panel mb-6" id="multi-plots-panel">
+      <div class="panel-header">
+        <div>
+          <h2 class="panel-title" id="chart-section-title">Multi-Horizon Daily Market Trendlines</h2>
+          <p class="panel-subtitle" id="chart-section-sub">4 forward observation horizons (Tonight, 2D, 3D, 7D) &bull; Extended daily at 9:00 AM IST</p>
+        </div>
+        <div class="chart-tab-group" id="chart-tab-group">
+          <button class="chart-tab active" data-metric="unavailability">Unavailability %</button>
+          <button class="chart-tab" data-metric="adr">ADR (₹)</button>
+          <button class="chart-tab" data-metric="revpar">RevPAR Proxy (₹)</button>
+          <button class="chart-tab" data-metric="listings">Supply (Listings)</button>
+        </div>
+      </div>
+
+      <div class="plots-grid-2x2">
+        <!-- Plot 1: Tonight (1D) -->
+        <div class="plot-box" id="plot-box-1d">
+          <div class="plot-box-header">
+            <span class="plot-tag tag-1d" style="padding: 0.2rem 0.55rem; border-radius: var(--radius-sm);">🌙 Tonight (1 Day)</span>
+            <span class="plot-badge" id="plot-badge-1d">--%</span>
+          </div>
+          <div class="plot-canvas-container">
+            <canvas id="chart-1d"></canvas>
+          </div>
+        </div>
+
+        <!-- Plot 2: Next 2 Days (2D) -->
+        <div class="plot-box" id="plot-box-2d">
+          <div class="plot-box-header">
+            <span class="plot-tag tag-2d" style="padding: 0.2rem 0.55rem; border-radius: var(--radius-sm);">⚡ Next 2 Days</span>
+            <span class="plot-badge" id="plot-badge-2d">--%</span>
+          </div>
+          <div class="plot-canvas-container">
+            <canvas id="chart-2d"></canvas>
+          </div>
+        </div>
+
+        <!-- Plot 3: Next 3 Days (3D) -->
+        <div class="plot-box" id="plot-box-3d">
+          <div class="plot-box-header">
+            <span class="plot-tag tag-3d" style="padding: 0.2rem 0.55rem; border-radius: var(--radius-sm);">📅 Next 3 Days</span>
+            <span class="plot-badge" id="plot-badge-3d">--%</span>
+          </div>
+          <div class="plot-canvas-container">
+            <canvas id="chart-3d"></canvas>
+          </div>
+        </div>
+
+        <!-- Plot 4: Next 7 Days (7D) -->
+        <div class="plot-box" id="plot-box-7d">
+          <div class="plot-box-header">
+            <span class="plot-tag tag-7d" style="padding: 0.2rem 0.55rem; border-radius: var(--radius-sm);">🗓️ Next 7 Days</span>
+            <span class="plot-badge" id="plot-badge-7d">--%</span>
+          </div>
+          <div class="plot-canvas-container">
+            <canvas id="chart-7d"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tracked Areas Multi-Horizon Comparison Table -->
+    <section class="card-panel table-panel mb-6" id="area-comparison-panel">
+      <div class="panel-header">
+        <div>
+          <h2 class="panel-title">Tracked Areas Comparison (Multi-Horizon)</h2>
+          <p class="panel-subtitle">{{ areas|length }} Discovered Ahmedabad sub-market areas across Tonight (1D), Next 2D, Next 3D, and Next 7D horizons</p>
+        </div>
+        <span class="badge-count" id="area-count-badge">{{ areas|length }} Discovered Areas</span>
+      </div>
+      
+      <div class="table-responsive">
+        <table class="data-table" id="area-comparison-table">
+          <thead>
+            <tr>
+              <th>Area</th>
+              <th class="text-right">Listings</th>
+              <th class="text-right">Tonight (1D)</th>
+              <th class="text-right">Next 2D</th>
+              <th class="text-right">Next 3D</th>
+              <th class="text-right">Next 7D</th>
+              <th class="text-right">ADR</th>
+              <th class="text-right">RevPAR Proxy</th>
+              <th class="text-center">Coverage</th>
+            </tr>
+          </thead>
+          <tbody id="area-table-body">
+            <tr>
+              <td colspan="9" class="text-center py-4 text-muted">Loading area market snapshots...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Master Listing Universe Section -->
+    <section class="card-panel mt-6" id="listings-universe-panel">
+      <div class="panel-header">
+        <div>
+          <h2 class="panel-title">Master Listing Universe Sample</h2>
+          <p class="panel-subtitle">Discovered stable listing records maintained across observation snapshots</p>
+        </div>
+        <div class="table-search-group">
+          <input type="text" id="listing-search-input" class="form-input search-input" placeholder="Search by title or ID...">
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="data-table" id="master-listings-table">
+          <thead>
+            <tr>
+              <th>Listing ID</th>
+              <th>Property Title</th>
+              <th>Area</th>
+              <th>Property Type</th>
+              <th class="text-center" title="Occupancy for Tomorrow night (0/1 or 1/1)">Tomorrow (1D)</th>
+              <th class="text-center" title="Occupancy for Next 2 Days (0/2, 1/2, 2/2)">Next 2 Days</th>
+              <th class="text-center" title="Occupancy for Next 3 Days (0/3 to 3/3)">Next 3 Days</th>
+              <th class="text-center" title="Occupancy for Next 7 Days (0/7 to 7/7)">Next 7 Days</th>
+              <th class="text-center">Bedrooms</th>
+              <th class="text-center">Beds</th>
+              <th class="text-center">Amenities</th>
+              <th class="text-right">Rating</th>
+              <th class="text-right">Reviews</th>
+              <th class="text-center">Airbnb Listing</th>
+            </tr>
+          </thead>
+          <tbody id="listings-table-body">
+            <tr>
+              <td colspan="14" class="text-center py-4 text-muted">Loading listing universe...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- AI Analyst Floating Drawer / Modal -->
+  <div class="ai-modal-overlay" id="ai-modal-overlay">
+    <div class="ai-modal-card" id="ai-modal-card">
+      <div class="ai-modal-header">
+        <div class="ai-brand-group">
+          <span class="ai-icon">✨</span>
+          <div>
+            <h3 class="ai-title">Ahmedabad Market AI Analyst</h3>
+            <p class="ai-subtitle">Fact-grounded analysis of stored historical observations</p>
+          </div>
+        </div>
+        <button id="btn-close-ai" class="btn-close">&times;</button>
+      </div>
+
+      <!-- Quick query chips -->
+      <div class="query-chips" id="query-chips">
+        <button class="chip" data-prompt="Compare Bopal vs Shilaj">⚖️ Compare Bopal vs Shilaj</button>
+        <button class="chip" data-prompt="Which area has the highest ADR?">💰 Highest ADR</button>
+        <button class="chip" data-prompt="Which areas currently have the best combination of observed occupancy, ADR and RevPAR?">🏆 Best RevPAR Combo</button>
+        <button class="chip" data-prompt="Which area has improved the most in the last 30 days?">📈 30-Day Top Growth</button>
+        <button class="chip" data-prompt="Which area has increasing demand but decreasing supply?">⚡ Supply-Demand Squeeze</button>
+        <button class="chip" data-prompt="Show me Ghuma's last 30 days.">📍 Ghuma 30-Day Profile</button>
+      </div>
+
+      <!-- Conversation container -->
+      <div class="ai-chat-history" id="ai-chat-history">
+        <div class="chat-message bot">
+          <div class="message-content">
+            Hello! I am your <strong>Ahmedabad Airbnb Leasing Analyst</strong>. Ask me anything about our historical dataset, area comparisons, ADR pricing power, or supply-demand trends.
+          </div>
+        </div>
+      </div>
+
+      <!-- Input box -->
+      <form class="ai-input-form" id="ai-input-form">
+        <input type="text" id="ai-prompt-input" class="ai-prompt-input" placeholder="Ask a question (e.g., 'Compare Bopal vs Shilaj')..." required>
+        <button type="submit" id="btn-send-ai" class="btn btn-primary">Ask</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 9 AM Daily Report Modal -->
+  <div class="report-modal-overlay" id="report-modal-overlay">
+    <div class="report-modal-card">
+      <div class="report-modal-header">
+        <h3 class="report-title">Daily 09:00 AM Market Intelligence Report</h3>
+        <button id="btn-close-report" class="btn-close">&times;</button>
+      </div>
+      <div class="report-modal-body">
+        <pre class="report-pre" id="report-text-content">Loading daily 9 AM report...</pre>
+      </div>
+      <div class="report-modal-footer">
+        <button id="btn-copy-report" class="btn btn-secondary">📋 Copy to Clipboard</button>
+        <button id="btn-dismiss-report" class="btn btn-outline">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Collection Runs Audit Modal -->
+  <div class="report-modal-overlay" id="runs-modal-overlay">
+    <div class="report-modal-card" style="max-width: 900px;">
+      <div class="report-modal-header">
+        <h3 class="report-title">Historical Ingestion Audit Log</h3>
+        <button id="btn-close-runs" class="btn-close">&times;</button>
+      </div>
+      <div class="report-modal-body">
+        <div class="table-responsive">
+          <table class="data-table" id="runs-table">
+            <thead>
+              <tr>
+                <th>Date & Time (IST)</th>
+                <th>Run ID</th>
+                <th>Provider</th>
+                <th>Discovered</th>
+                <th>Calendar Days</th>
+                <th>Coverage</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="runs-table-body">
+              <tr>
+                <td colspan="7" class="text-center py-4 text-muted">Loading audit records...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- App Logic JS -->
+  <script src="/static/js/app.js?v=3.6"></script>
+</body>
+</html>
