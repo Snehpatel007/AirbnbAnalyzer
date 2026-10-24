@@ -1,9 +1,9 @@
-name: Automated Daily Market Ingestion (1:00 AM IST)
+name: Automated Daily Market Ingestion (5:00 PM IST)
 
 on:
   schedule:
-    # 19:30 UTC is exactly 01:00 AM IST (UTC + 5:30)
-    - cron: '30 19 * * *'
+    # 11:30 UTC is exactly 05:00 PM IST (UTC + 5:30)
+    - cron: '30 11 * * *'
   workflow_dispatch: # Allows manual trigger from GitHub UI anytime
 
 jobs:

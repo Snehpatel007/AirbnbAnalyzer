@@ -75,15 +75,15 @@ function initSchedulerCountdown() {
         } else {
           timeLabel = `${m}m ${s < 10 ? '0' : ''}${s}s`;
         }
-        pill.textContent = `⏱️ Next Ingestion: In ${timeLabel} (1:00 AM IST)`;
+        pill.textContent = `⏱️ Next Ingestion: In ${timeLabel} (5:00 PM IST)`;
         pill.style.background = 'rgba(16, 185, 129, 0.15)';
         pill.style.color = '#10b981';
       } else if (diffSec >= -60) {
-        pill.textContent = `⚡ 1:00 AM Ingestion running...`;
+        pill.textContent = `⚡ 5:00 PM Ingestion running...`;
         pill.style.background = 'rgba(239, 68, 68, 0.2)';
         pill.style.color = '#f87171';
       } else {
-        pill.textContent = `⏱️ Next Ingestion: 1:00 AM IST`;
+        pill.textContent = `⏱️ Next Ingestion: 5:00 PM IST`;
       }
     }
   }, 1000);

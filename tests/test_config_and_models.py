@@ -10,7 +10,7 @@ def test_areas_configuration():
     assert cfg.city == "Ahmedabad"
     assert cfg.country == "India"
     assert cfg.timezone == "Asia/Kolkata"
-    assert cfg.collection_time_ist in ("01:00", "00:50", "09:00")
+    assert cfg.collection_time_ist in ("17:00", "01:00", "00:50", "09:00")
     assert cfg.calendar_horizon_days == 7
     
     # Discovered dynamic unique areas from Ahmedabad city range
