@@ -192,7 +192,8 @@ class MarketCollector:
             if all_active_listing_ids:
                 self.db.query(CalendarObservation).filter(
                     CalendarObservation.listing_id.in_(all_active_listing_ids),
-                    CalendarObservation.observation_date == self.observation_date
+                    CalendarObservation.observation_date == self.observation_date,
+                    CalendarObservation.snapshot_slot == self.snapshot_slot
                 ).delete(synchronize_session=False)
                 self.db.commit()
 
