@@ -518,6 +518,7 @@ def get_daily_report(
     }
 
 
+@app.get("/api/trigger-collection")
 @app.post("/api/trigger-collection")
 def trigger_daily_collection(
     date: Optional[str] = Query(None),
