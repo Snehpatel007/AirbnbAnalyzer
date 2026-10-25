@@ -46,32 +46,38 @@ class MarketScheduler:
 
         # Slot 1: 4:00 PM IST (16:00)
         self.scheduler.add_job(
-            lambda: scheduled_slot_ingestion("4pm"),
+            scheduled_slot_ingestion,
+            args=["4pm"],
             trigger=CronTrigger(hour=16, minute=0, timezone=self.timezone),
             id="cron_4pm_collector",
             name="Daily 4:00 PM IST Ingestion (4pm Slot)",
             replace_existing=True,
-            misfire_grace_time=86400,
+            misfire_grace_time=3600,
+            coalesce=True,
         )
 
         # Slot 2: 8:00 PM IST (20:00)
         self.scheduler.add_job(
-            lambda: scheduled_slot_ingestion("8pm"),
+            scheduled_slot_ingestion,
+            args=["8pm"],
             trigger=CronTrigger(hour=20, minute=0, timezone=self.timezone),
             id="cron_8pm_collector",
             name="Daily 8:00 PM IST Ingestion (8pm Slot)",
             replace_existing=True,
-            misfire_grace_time=86400,
+            misfire_grace_time=3600,
+            coalesce=True,
         )
 
         # Slot 3: 11:30 PM IST (23:30)
         self.scheduler.add_job(
-            lambda: scheduled_slot_ingestion("11.30pm"),
+            scheduled_slot_ingestion,
+            args=["11.30pm"],
             trigger=CronTrigger(hour=23, minute=30, timezone=self.timezone),
             id="cron_11_30pm_collector",
             name="Daily 11:30 PM IST Ingestion (11.30pm Slot)",
             replace_existing=True,
-            misfire_grace_time=86400,
+            misfire_grace_time=3600,
+            coalesce=True,
         )
 
         self.scheduler.start()
