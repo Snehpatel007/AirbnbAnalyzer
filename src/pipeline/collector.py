@@ -17,6 +17,12 @@ from src.providers.factory import get_data_provider
 from src.pipeline.validator import DataQualityValidator
 from src.pipeline.aggregator import DailyAggregator
 from src.pipeline.geocoder import geocoder
+import pytz
+
+IST = pytz.timezone("Asia/Kolkata")
+
+def get_ist_today() -> str:
+    return datetime.now(IST).strftime("%Y-%m-%d")
 
 
 def normalize_slot(slot: Optional[str]) -> str:
@@ -50,7 +56,11 @@ class MarketCollector:
     ):
         self.db = db or SessionLocal()
         self._owns_db = db is None
-        self.observation_date = observation_date or datetime.now().strftime("%Y-%m-%d")
+        self.observation_date = (
+            observation_date.strip()
+            if observation_date and str(observation_date).strip()
+            else get_ist_today()
+        )
         self.snapshot_slot = normalize_slot(snapshot_slot)
         self.provider = get_data_provider(provider_type=provider_name, observation_date=self.observation_date)
         self.horizon_days = settings.market_config.calendar_horizon_days

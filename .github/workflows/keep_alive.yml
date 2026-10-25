@@ -1,0 +1,21 @@
+name: Keep-Alive Heartbeat
+
+on:
+  schedule:
+    # Ping every 10 minutes to reset Render's 15-minute inactivity timer
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Hosted Application
+        run: |
+          TARGET_URL="${{ secrets.APP_HOST_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="https://airbnbanalyzer.onrender.com"
+          fi
+          echo "Sending keep-alive ping to $TARGET_URL/api/health..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 15 --max-time 45 "$TARGET_URL/api/health" || true)
+          echo "Keep-alive response: HTTP $HTTP_CODE"

@@ -55,19 +55,34 @@ jobs:
           SLOT="${{ steps.slot_info.outputs.slot }}"
           echo "Sending automated ingestion trigger to $TARGET_URL for slot [$SLOT]..."
           
-          # Wake up service if it's sleeping (first ping)
-          curl -s -o /dev/null -w "%{http_code}" "$TARGET_URL/api/health" || true
-          sleep 5
+          # Intelligent Polling Loop: wait until Render wakes up (HTTP 200)
+          echo "Checking service status and waking up cold-start if sleeping..."
+          WOKE_UP=false
+          for i in {1..30}; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 15 "$TARGET_URL/api/health" || true)
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Service is awake and responding (HTTP 200) after attempt $i."
+              WOKE_UP=true
+              break
+            fi
+            echo "Waiting for service cold-start... attempt $i (received HTTP $CODE), retrying in 10s..."
+            sleep 10
+          done
 
-          # Trigger collection
-          HTTP_STATUS=$(curl -s -S -o /tmp/resp.json -w "%{http_code}" -X POST "$TARGET_URL/api/trigger-collection?slot=${SLOT}")
+          if [ "$WOKE_UP" != "true" ]; then
+            echo "❌ Service did not respond with 200 within 5 minutes."
+            exit 1
+          fi
+
+          echo "🚀 Triggering collection pipeline for slot [$SLOT]..."
+          HTTP_STATUS=$(curl -s -S -o /tmp/resp.json -w "%{http_code}" --connect-timeout 30 --max-time 600 -X POST "$TARGET_URL/api/trigger-collection?slot=${SLOT}")
           echo "Response code: $HTTP_STATUS"
           cat /tmp/resp.json || true
           
           if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "Initial attempt returned $HTTP_STATUS. Waiting 20 seconds for cold-start and retrying..."
-            sleep 20
-            HTTP_STATUS=$(curl -s -S -o /tmp/resp.json -w "%{http_code}" -X POST "$TARGET_URL/api/trigger-collection?slot=${SLOT}")
+            echo "Initial attempt returned $HTTP_STATUS. Waiting 15 seconds and retrying once..."
+            sleep 15
+            HTTP_STATUS=$(curl -s -S -o /tmp/resp.json -w "%{http_code}" --connect-timeout 30 --max-time 600 -X POST "$TARGET_URL/api/trigger-collection?slot=${SLOT}")
             echo "Retry response code: $HTTP_STATUS"
             cat /tmp/resp.json || true
           fi

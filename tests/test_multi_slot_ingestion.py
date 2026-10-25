@@ -2,7 +2,9 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.models.database import Base, Listing, CalendarObservation, DailyMarketMetric, CollectionRun
+from sqlalchemy.pool import StaticPool
+
+from src.models.database import Base, Listing, CalendarObservation, DailyMarketMetric, CollectionRun, get_db
 from src.pipeline.collector import normalize_slot
 from src.pipeline.aggregator import DailyAggregator
 from src.web.app import app, resolve_slot_for_date
@@ -11,7 +13,11 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def in_memory_db():
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool
+    )
     Base.metadata.create_all(engine)
     TestingSession = sessionmaker(bind=engine)
     session = TestingSession()
@@ -158,10 +164,47 @@ def test_calendar_observation_slot_isolation(in_memory_db):
 
 
 def test_api_slot_filtering_and_available_slots(in_memory_db):
-    client = TestClient(app)
-    
-    # Check that resolve_slot_for_date defaults to manual when empty
-    resolved = resolve_slot_for_date(in_memory_db, "2026-10-24", "4pm")
-    assert resolved == "4pm"
-    resolved_latest = resolve_slot_for_date(in_memory_db, "2026-10-24", "latest")
-    assert resolved_latest == "manual"
+    app.dependency_overrides[get_db] = lambda: in_memory_db
+    try:
+        client = TestClient(app)
+        
+        # Check that resolve_slot_for_date defaults to manual when empty
+        resolved = resolve_slot_for_date(in_memory_db, "2026-10-24", "4pm")
+        assert resolved == "4pm"
+        resolved_latest = resolve_slot_for_date(in_memory_db, "2026-10-24", "latest")
+        assert resolved_latest == "manual"
+
+        # Add a manual metric for 2026-10-24
+        m_manual = DailyMarketMetric(
+            observation_date="2026-10-24",
+            snapshot_slot="manual",
+            area="Ahmedabad",
+            active_listings=280,
+            observed_unavailability_rate=0.55,
+            adr=4000.0,
+            revpar_proxy=2200.0
+        )
+        in_memory_db.add(m_manual)
+        in_memory_db.commit()
+
+        # When querying for 8pm (which does not exist), metric should be None, NOT falling back to manual
+        res_8pm = client.get("/api/overview?date=2026-10-24&slot=8pm")
+        assert res_8pm.status_code == 200
+        data_8pm = res_8pm.json()
+        assert data_8pm["snapshot_slot"] == "8pm"
+        assert data_8pm["metric"] is None
+        assert data_8pm["has_data"] is False
+
+        # When querying latest, it should resolve to manual
+        res_latest = client.get("/api/overview?date=2026-10-24&slot=latest")
+        assert res_latest.status_code == 200
+        data_latest = res_latest.json()
+        assert data_latest["metric"] is not None
+        assert data_latest["metric"]["snapshot_slot"] == "manual"
+
+        # Comparison for 8pm should return empty list
+        res_comp_8pm = client.get("/api/comparison?date=2026-10-24&slot=8pm")
+        assert res_comp_8pm.status_code == 200
+        assert res_comp_8pm.json()["areas"] == []
+    finally:
+        app.dependency_overrides.clear()

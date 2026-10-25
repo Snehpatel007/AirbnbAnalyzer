@@ -3,11 +3,12 @@ let horizonCharts = { '1d': null, '2d': null, '3d': null, '7d': null };
 let currentMetric = 'unavailability'; // 'unavailability', 'adr', 'revpar', 'listings'
 let schedulerStatus = null;
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   initClock();
   initSchedulerCountdown();
   initEventListeners();
   initAutoRefreshMonitor();
+  await updateSlotAvailability();
   loadDashboardData();
   loadAreaComparison();
   loadTrendsChart();
@@ -101,6 +102,38 @@ function getSelectedSlot() {
   return slotSelect ? slotSelect.value : 'latest';
 }
 
+async function updateSlotAvailability(date) {
+  const slotSelect = document.getElementById('slot-select');
+  if (!slotSelect) return;
+  try {
+    const res = await fetch(`/api/available-slots?date=${encodeURIComponent(date || '')}`);
+    const data = await res.json();
+    const available = data.available_slots || [];
+
+    const slotLabels = {
+      'latest': '⚡ Latest Available',
+      '4pm': '4:00 PM IST (4pm)',
+      '8pm': '8:00 PM IST (8pm)',
+      '11.30pm': '11:30 PM IST (11.30pm)',
+      'manual': 'Manual Ingestion'
+    };
+
+    Array.from(slotSelect.options).forEach(opt => {
+      const val = opt.value;
+      if (val === 'latest') {
+        const latestName = data.latest_slot ? ` (${data.latest_slot})` : '';
+        opt.textContent = `⚡ Latest Available${latestName}`;
+      } else {
+        const isAvail = available.includes(val);
+        const baseName = slotLabels[val] || val;
+        opt.textContent = `${baseName} ${isAvail ? '🟢' : '⚪'}`;
+      }
+    });
+  } catch (e) {
+    console.debug('Could not update slot badges:', e);
+  }
+}
+
 // 2. Event Listeners
 function initEventListeners() {
   const areaSelect = document.getElementById('area-select');
@@ -116,7 +149,8 @@ function initEventListeners() {
   }
 
   if (dateInput) {
-    dateInput.addEventListener('change', () => {
+    dateInput.addEventListener('change', async () => {
+      await updateSlotAvailability(dateInput.value);
       loadDashboardData();
       loadAreaComparison();
       loadMasterListings();
@@ -237,7 +271,47 @@ async function loadDashboardData() {
     }
 
     if (!metric) {
-      showToast(`No snapshot found for ${slot !== 'latest' ? slot + ' slot on ' : ''}${date || 'selected date'}`, 'error');
+      document.getElementById('kpi-active-listings').textContent = '--';
+      const bList7d = document.getElementById('badge-listings-7d');
+      if (bList7d) { bList7d.textContent = '7D: --'; bList7d.className = 'trend-badge'; }
+      const bList30d = document.getElementById('badge-listings-30d');
+      if (bList30d) { bList30d.textContent = '30D: --'; bList30d.className = 'trend-badge'; }
+
+      document.getElementById('kpi-unavailability').textContent = '--';
+      const bUnavail7d = document.getElementById('badge-unavail-7d');
+      if (bUnavail7d) { bUnavail7d.textContent = '7D: --'; bUnavail7d.className = 'trend-badge'; }
+      const bUnavail30d = document.getElementById('badge-unavail-30d');
+      if (bUnavail30d) { bUnavail30d.textContent = '30D: --'; bUnavail30d.className = 'trend-badge'; }
+
+      document.getElementById('kpi-adr').textContent = '--';
+      const adrSub = document.getElementById('kpi-adr-subtext');
+      if (adrSub) adrSub.textContent = `No snapshot recorded for ${slot !== 'latest' ? slot : 'selected slot'}`;
+
+      document.getElementById('kpi-revpar').textContent = '--';
+      const monthlyRev = document.getElementById('kpi-monthly-rev');
+      if (monthlyRev) monthlyRev.textContent = 'Est. Gross / Mo: --';
+      document.getElementById('kpi-coverage').textContent = '--';
+
+      const pill = document.getElementById('kpi-run-status');
+      if (pill) {
+        pill.textContent = 'NO DATA';
+        pill.className = 'coverage-status-pill partial';
+      }
+
+      ['1d', '2d', '3d', '7d'].forEach(k => {
+        const uEl = document.getElementById(`matrix-unavail-${k}`);
+        const pEl = document.getElementById(`matrix-progress-${k}`);
+        const nEl = document.getElementById(`matrix-nights-${k}`);
+        const aEl = document.getElementById(`matrix-adr-${k}`);
+        const rEl = document.getElementById(`matrix-revpar-${k}`);
+        if (uEl) uEl.textContent = '--';
+        if (pEl) pEl.style.width = '0%';
+        if (nEl) nEl.textContent = '--';
+        if (aEl) aEl.textContent = 'ADR: --';
+        if (rEl) rEl.textContent = 'RevPAR: --';
+      });
+
+      showToast(`No snapshot found for ${slot !== 'latest' ? slot + ' slot on ' : ''}${date || 'selected date'}`, 'warning');
       return;
     }
 
@@ -356,7 +430,7 @@ async function loadAreaComparison() {
     }
 
     if (!data.areas || data.areas.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-muted">No area records for ${date}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-muted">No area records for ${slot !== 'latest' ? slot + ' slot on ' : ''}${date || 'selected date'}</td></tr>`;
       return;
     }
 
@@ -766,20 +840,32 @@ async function triggerIngestion() {
     btn.disabled = true;
     btn.innerHTML = `<span class="btn-icon">⏳</span><span>Ingesting...</span>`;
   }
-  const dateInput = document.getElementById('obs-date-input');
-  const obsDate = dateInput ? dateInput.value : '';
-  const slot = getSelectedSlot();
-  const triggerSlot = slot === 'latest' ? 'manual' : slot;
+  
+  // Live manual ingestion ALWAYS ingests for TODAY's current date in IST.
+  // We NEVER pass obs-date-input for data collection!
+  const triggerSlot = 'manual';
 
-  showToast(`Starting Ahmedabad Airbnb ingestion cycle (${triggerSlot})...`, 'success');
+  showToast(`Starting live Ahmedabad Airbnb ingestion (${triggerSlot})...`, 'info');
 
   try {
-    const res = await fetch(`/api/trigger-collection?date=${encodeURIComponent(obsDate)}&slot=${encodeURIComponent(triggerSlot)}`, { method: 'POST' });
+    const res = await fetch(`/api/trigger-collection?slot=${encodeURIComponent(triggerSlot)}`, { method: 'POST' });
     const result = await res.json();
 
-    showToast(`Ingestion complete for slot [${result.snapshot_slot || triggerSlot}]! Discovered ${result.listings_discovered} listings, ${result.calendar_records} calendar days. Coverage: ${result.coverage_pct}%`, 'success');
+    const ingestedDate = result.observation_date;
+    showToast(`Ingestion complete for slot [${result.snapshot_slot || triggerSlot}] on ${ingestedDate}! Discovered ${result.listings_discovered} listings, ${result.calendar_records} calendar days. Coverage: ${result.coverage_pct}%`, 'success');
     
-    // Refresh dashboard
+    // Automatically switch observation date picker to the newly ingested date
+    const dateInput = document.getElementById('obs-date-input');
+    if (dateInput && ingestedDate) {
+      dateInput.value = ingestedDate;
+    }
+    const slotSelect = document.getElementById('slot-select');
+    if (slotSelect) {
+      slotSelect.value = 'manual';
+    }
+
+    // Refresh slot availability badges & dashboard data
+    await updateSlotAvailability(ingestedDate);
     loadDashboardData();
     loadAreaComparison();
     loadTrendsChart();

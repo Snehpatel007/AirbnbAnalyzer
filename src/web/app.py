@@ -24,6 +24,12 @@ from src.pipeline.collector import MarketCollector, normalize_slot
 from src.agent.analyzer import MarketAnalysisAgent
 from src.reporting.daily_report import DailyReportGenerator
 from src.scheduler.runner import market_scheduler
+import pytz
+
+IST = pytz.timezone("Asia/Kolkata")
+
+def get_ist_today() -> str:
+    return datetime.now(IST).strftime("%Y-%m-%d")
 
 
 def resolve_slot_for_date(db: Session, date: str, requested_slot: Optional[str] = None) -> str:
@@ -147,7 +153,7 @@ def get_available_slots(
 ):
     if not date:
         latest = db.query(DailyMarketMetric.observation_date).order_by(desc(DailyMarketMetric.observation_date)).first()
-        date = latest[0] if latest else datetime.now().strftime("%Y-%m-%d")
+        date = latest[0] if latest else get_ist_today()
 
     rows = (
         db.query(DailyMarketMetric.snapshot_slot)
@@ -185,10 +191,11 @@ def get_market_overview(
     # If date not specified, get latest
     if not date:
         latest = db.query(DailyMarketMetric.observation_date).order_by(desc(DailyMarketMetric.observation_date)).first()
-        date = latest[0] if latest else datetime.now().strftime("%Y-%m-%d")
+        date = latest[0] if latest else get_ist_today()
 
     target_slot = resolve_slot_for_date(db, date, slot)
     target_area = area or "Ahmedabad"
+    is_latest_query = not slot or slot.lower() in ("latest", "all", "none", "")
 
     metric = (
         db.query(DailyMarketMetric)
@@ -200,79 +207,80 @@ def get_market_overview(
         .first()
     )
 
-    if not metric:
-        # Fallback to target area without slot restriction, then any metric for date
+    if not metric and is_latest_query:
+        # Fallback to target area without slot restriction ONLY when 'latest' was requested
         metric = (
             db.query(DailyMarketMetric)
             .filter(DailyMarketMetric.observation_date == date, DailyMarketMetric.area == target_area)
             .order_by(DailyMarketMetric.id.desc())
             .first()
         )
-    if not metric:
-        metric = db.query(DailyMarketMetric).filter(DailyMarketMetric.observation_date == date).order_by(DailyMarketMetric.id.desc()).first()
+        if not metric:
+            metric = db.query(DailyMarketMetric).filter(DailyMarketMetric.observation_date == date).order_by(DailyMarketMetric.id.desc()).first()
 
     # Calculate exact forward horizons (Tonight 1D, 7D, 14D, 30D)
     horizons = {}
-    try:
-        from datetime import timedelta
-        obs_dt = datetime.strptime(date, "%Y-%m-%d")
-        d1 = date
-        d2 = (obs_dt + timedelta(days=1)).strftime("%Y-%m-%d")
-        d3 = (obs_dt + timedelta(days=2)).strftime("%Y-%m-%d")
-        d7 = (obs_dt + timedelta(days=6)).strftime("%Y-%m-%d")
-        d14 = (obs_dt + timedelta(days=13)).strftime("%Y-%m-%d")
-        d30 = (obs_dt + timedelta(days=29)).strftime("%Y-%m-%d")
+    if metric:
+        try:
+            from datetime import timedelta
+            obs_dt = datetime.strptime(date, "%Y-%m-%d")
+            d1 = date
+            d2 = (obs_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+            d3 = (obs_dt + timedelta(days=2)).strftime("%Y-%m-%d")
+            d7 = (obs_dt + timedelta(days=6)).strftime("%Y-%m-%d")
+            d14 = (obs_dt + timedelta(days=13)).strftime("%Y-%m-%d")
+            d30 = (obs_dt + timedelta(days=29)).strftime("%Y-%m-%d")
 
-        q = db.query(CalendarObservation.calendar_date, CalendarObservation.status, CalendarObservation.price).filter(
-            CalendarObservation.observation_date == date,
-            CalendarObservation.snapshot_slot == target_slot
-        )
-        if target_area != "Ahmedabad":
-            q = q.join(Listing, CalendarObservation.listing_id == Listing.listing_id).filter(Listing.area == target_area)
-
-        rows = q.all()
-        # If no rows for this slot, fallback to any slot for that date
-        if not rows:
-            q_fallback = db.query(CalendarObservation.calendar_date, CalendarObservation.status, CalendarObservation.price).filter(
-                CalendarObservation.observation_date == date
+            q = db.query(CalendarObservation.calendar_date, CalendarObservation.status, CalendarObservation.price).filter(
+                CalendarObservation.observation_date == date,
+                CalendarObservation.snapshot_slot == target_slot
             )
             if target_area != "Ahmedabad":
-                q_fallback = q_fallback.join(Listing, CalendarObservation.listing_id == Listing.listing_id).filter(Listing.area == target_area)
-            rows = q_fallback.all()
+                q = q.join(Listing, CalendarObservation.listing_id == Listing.listing_id).filter(Listing.area == target_area)
 
-        def calc_h_stats(subset, label, date_range):
-            if not subset:
-                return None
-            unavail = sum(1 for r in subset if r[1] in ("unavailable", "blocked", "booked"))
-            rate = round(unavail / len(subset), 4)
-            prices = [r[2] for r in subset if r[2] and r[2] > 0]
-            default_adr = round(float(getattr(metric, "adr", 3200.0) or 3200.0), 2) if metric else 3200.0
-            adr = round(sum(prices) / len(prices), 2) if prices else default_adr
-            return {
-                "label": label,
-                "date_range": date_range,
-                "total_nights": len(subset),
-                "unavailable_nights": unavail,
-                "available_nights": len(subset) - unavail,
-                "unavailability_rate": rate,
-                "adr": adr,
-                "revpar_proxy": round(adr * rate, 2)
+            rows = q.all()
+            if not rows and is_latest_query:
+                q_fallback = db.query(CalendarObservation.calendar_date, CalendarObservation.status, CalendarObservation.price).filter(
+                    CalendarObservation.observation_date == date
+                )
+                if target_area != "Ahmedabad":
+                    q_fallback = q_fallback.join(Listing, CalendarObservation.listing_id == Listing.listing_id).filter(Listing.area == target_area)
+                rows = q_fallback.all()
+
+            def calc_h_stats(subset, label, date_range):
+                if not subset:
+                    return None
+                unavail = sum(1 for r in subset if r[1] in ("unavailable", "blocked", "booked"))
+                rate = round(unavail / len(subset), 4)
+                prices = [r[2] for r in subset if r[2] and r[2] > 0]
+                default_adr = round(float(getattr(metric, "adr", 3200.0) or 3200.0), 2) if metric else 3200.0
+                adr = round(sum(prices) / len(prices), 2) if prices else default_adr
+                return {
+                    "label": label,
+                    "date_range": date_range,
+                    "total_nights": len(subset),
+                    "unavailable_nights": unavail,
+                    "available_nights": max(0, len(subset) - unavail),
+                    "unavailability_rate": rate,
+                    "adr": adr,
+                    "revpar_proxy": round(adr * rate, 2)
+                }
+
+            horizons = {
+                "tonight_1d": calc_h_stats([r for r in rows if r[0] == d1], "Tonight (1 Night)", f"{d1}"),
+                "next_2d": calc_h_stats([r for r in rows if d1 <= r[0] <= d2], "Next 2 Days", f"{d1} to {d2}"),
+                "next_3d": calc_h_stats([r for r in rows if d1 <= r[0] <= d3], "Next 3 Days", f"{d1} to {d3}"),
+                "next_7d": calc_h_stats([r for r in rows if d1 <= r[0] <= d7], "Next 7 Days", f"{d1} to {d7}"),
             }
-
-        horizons = {
-            "tonight_1d": calc_h_stats([r for r in rows if r[0] == d1], "Tonight (1 Night)", f"{d1}"),
-            "next_2d": calc_h_stats([r for r in rows if d1 <= r[0] <= d2], "Next 2 Days", f"{d1} to {d2}"),
-            "next_3d": calc_h_stats([r for r in rows if d1 <= r[0] <= d3], "Next 3 Days", f"{d1} to {d3}"),
-            "next_7d": calc_h_stats([r for r in rows if d1 <= r[0] <= d7], "Next 7 Days", f"{d1} to {d7}"),
-        }
-    except Exception:
-        horizons = {}
+        except Exception:
+            horizons = {}
 
     return {
         "city": settings.market_config.city,
         "selected_area": target_area,
         "observation_date": date,
         "snapshot_slot": target_slot,
+        "has_data": metric is not None,
         "metric": metric.to_dict() if metric else None,
         "horizons": horizons,
     }
@@ -286,9 +294,10 @@ def get_area_comparison(
 ):
     if not date:
         latest = db.query(DailyMarketMetric.observation_date).order_by(desc(DailyMarketMetric.observation_date)).first()
-        date = latest[0] if latest else datetime.now().strftime("%Y-%m-%d")
+        date = latest[0] if latest else get_ist_today()
 
     target_slot = resolve_slot_for_date(db, date, slot)
+    is_latest_query = not slot or slot.lower() in ("latest", "all", "none", "")
 
     rows = (
         db.query(DailyMarketMetric)
@@ -300,7 +309,7 @@ def get_area_comparison(
         .order_by(DailyMarketMetric.active_listings.desc())
         .all()
     )
-    if not rows:
+    if not rows and is_latest_query:
         rows = (
             db.query(DailyMarketMetric)
             .filter(DailyMarketMetric.observation_date == date, DailyMarketMetric.area != "Ahmedabad")
@@ -319,7 +328,7 @@ def get_area_comparison(
 def get_market_trends(
     area: Optional[str] = Query("Ahmedabad", description="Tracked area or Ahmedabad overall"),
     slot: Optional[str] = Query(None, description="Snapshot slot: 4pm, 8pm, 11.30pm, manual, or latest"),
-    days: int = Query(30, ge=7, le=90),
+    days: int = Query(90, ge=7, le=365),
     db: Session = Depends(get_db)
 ):
     target_area = area or "Ahmedabad"
@@ -424,9 +433,10 @@ def get_listings(
     # Determine observation date and slot for forward horizon occupancy calculation
     if not date:
         latest = db.query(DailyMarketMetric.observation_date).order_by(desc(DailyMarketMetric.observation_date)).first()
-        date = latest[0] if latest else datetime.now().strftime("%Y-%m-%d")
+        date = latest[0] if latest else get_ist_today()
 
     target_slot = resolve_slot_for_date(db, date, slot)
+    is_latest_query = not slot or slot.lower() in ("latest", "all", "none", "")
 
     obs_dt = datetime.strptime(date, "%Y-%m-%d")
     d1 = date
@@ -444,8 +454,8 @@ def get_listings(
         )
         .all()
     )
-    # If no cal_rows for this slot, fallback to any slot for that date
-    if not cal_rows:
+    # If no cal_rows for this slot, fallback to any slot ONLY when 'latest' was requested
+    if not cal_rows and is_latest_query:
         cal_rows = (
             db.query(CalendarObservation.listing_id, CalendarObservation.calendar_date, CalendarObservation.status)
             .filter(CalendarObservation.listing_id.in_(l_ids), CalendarObservation.observation_date == date)
@@ -499,9 +509,10 @@ def get_daily_report(
     db: Session = Depends(get_db)
 ):
     rep_gen = DailyReportGenerator(db)
-    report_text = rep_gen.generate_report(date, snapshot_slot=slot)
+    rep_date = date or get_ist_today()
+    report_text = rep_gen.generate_report(rep_date, snapshot_slot=slot)
     return {
-        "observation_date": date or datetime.now().strftime("%Y-%m-%d"),
+        "observation_date": rep_date,
         "snapshot_slot": slot or "latest",
         "report": report_text
     }
@@ -515,7 +526,7 @@ def trigger_daily_collection(
     fetch_calendars: Optional[bool] = Query(False),
     db: Session = Depends(get_db)
 ):
-    obs_date = date or datetime.now().strftime("%Y-%m-%d")
+    obs_date = date.strip() if date and date.strip() else get_ist_today()
     collector = MarketCollector(
         db=db,
         observation_date=obs_date,
