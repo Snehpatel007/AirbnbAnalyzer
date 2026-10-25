@@ -538,6 +538,37 @@ def trigger_daily_collection(
     return result
 
 
+@app.post("/api/admin/cleanup-date")
+def cleanup_observation_date(
+    date: str = Query(..., description="Observation date YYYY-MM-DD to remove"),
+    slot: Optional[str] = Query(None, description="Optional slot to remove, or all slots if omitted"),
+    db: Session = Depends(get_db)
+):
+    cal_q = db.query(CalendarObservation).filter(CalendarObservation.observation_date == date)
+    metric_q = db.query(DailyMarketMetric).filter(DailyMarketMetric.observation_date == date)
+    run_q = db.query(CollectionRun).filter(CollectionRun.observation_date == date)
+
+    if slot and slot.lower() not in ("all", "*", ""):
+        norm_slot = normalize_slot(slot)
+        cal_q = cal_q.filter(CalendarObservation.snapshot_slot == norm_slot)
+        metric_q = metric_q.filter(DailyMarketMetric.snapshot_slot == norm_slot)
+        run_q = run_q.filter(CollectionRun.snapshot_slot == norm_slot)
+
+    del_cal = cal_q.delete(synchronize_session=False)
+    del_metric = metric_q.delete(synchronize_session=False)
+    del_runs = run_q.delete(synchronize_session=False)
+    db.commit()
+
+    return {
+        "status": "SUCCESS",
+        "date": date,
+        "slot": slot or "all",
+        "deleted_calendar_observations": del_cal,
+        "deleted_metrics": del_metric,
+        "deleted_runs": del_runs,
+    }
+
+
 @app.post("/api/ai-query", response_model=NaturalLanguageQueryResponse)
 def execute_natural_language_query(
     payload: NaturalLanguageQueryRequest,
