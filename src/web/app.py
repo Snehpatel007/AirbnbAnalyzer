@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List
 from pydantic import BaseModel
-from fastapi import FastAPI, Depends, Query, HTTPException, Request
+from fastapi import FastAPI, Depends, Query, HTTPException, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -518,22 +518,85 @@ def get_daily_report(
     }
 
 
+def run_collection_background_task(
+    obs_date: str,
+    slot: str,
+    provider: Optional[str] = None,
+    fetch_calendars: bool = False
+):
+    try:
+        collector = MarketCollector(
+            observation_date=obs_date,
+            provider_name=provider,
+            fetch_individual_calendars=fetch_calendars,
+            snapshot_slot=slot
+        )
+        return collector.run()
+    except Exception as e:
+        import logging
+        logging.getLogger("airbnbanalyzer").error(f"Background collection error for slot {slot}: {e}", exc_info=True)
+
+
 @app.get("/api/trigger-collection")
 @app.post("/api/trigger-collection")
 def trigger_daily_collection(
+    background_tasks: BackgroundTasks,
     date: Optional[str] = Query(None),
     slot: Optional[str] = Query("manual", description="Snapshot slot: 4pm, 8pm, 11.30pm, manual"),
     provider: Optional[str] = Query(None),
     fetch_calendars: Optional[bool] = Query(False),
+    background: Optional[bool] = Query(False, description="Run collection asynchronously in background"),
+    async_mode: Optional[bool] = Query(False, alias="async", description="Run collection asynchronously in background"),
     db: Session = Depends(get_db)
 ):
     obs_date = date.strip() if date and date.strip() else get_ist_today()
+    norm_slot = normalize_slot(slot)
+
+    # 1. Prevent concurrent duplicate runs if an ingestion for this slot started within last 4 minutes
+    four_min_ago = datetime.utcnow() - timedelta(minutes=4)
+    active_run = (
+        db.query(CollectionRun)
+        .filter(
+            CollectionRun.observation_date == obs_date,
+            CollectionRun.snapshot_slot == norm_slot,
+            CollectionRun.status == "RUNNING",
+            CollectionRun.started_at >= four_min_ago
+        )
+        .first()
+    )
+    if active_run:
+        return {
+            "status": "ALREADY_RUNNING",
+            "message": f"An ingestion run for slot [{norm_slot}] on {obs_date} is already actively running.",
+            "run_id": active_run.run_id,
+            "started_at": active_run.started_at.isoformat() if active_run.started_at else None,
+            "observation_date": obs_date,
+            "snapshot_slot": norm_slot
+        }
+
+    # 2. Async / Background execution mode
+    if background or async_mode:
+        background_tasks.add_task(
+            run_collection_background_task,
+            obs_date=obs_date,
+            slot=norm_slot,
+            provider=provider,
+            fetch_calendars=bool(fetch_calendars)
+        )
+        return {
+            "status": "QUEUED",
+            "message": f"Collection task started in background for slot [{norm_slot}] on {obs_date}.",
+            "observation_date": obs_date,
+            "snapshot_slot": norm_slot
+        }
+
+    # 3. Synchronous execution mode (used by UI button)
     collector = MarketCollector(
         db=db,
         observation_date=obs_date,
         provider_name=provider,
         fetch_individual_calendars=fetch_calendars,
-        snapshot_slot=slot
+        snapshot_slot=norm_slot
     )
     result = collector.run()
     return result

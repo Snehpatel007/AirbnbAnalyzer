@@ -206,5 +206,34 @@ def test_api_slot_filtering_and_available_slots(in_memory_db):
         res_comp_8pm = client.get("/api/comparison?date=2026-10-24&slot=8pm")
         assert res_comp_8pm.status_code == 200
         assert res_comp_8pm.json()["areas"] == []
+
+        # Background trigger test (mock background task so it doesn't trigger live network scrape in test)
+        from unittest.mock import patch
+        with patch("src.web.app.run_collection_background_task") as mock_bg:
+            res_bg = client.get("/api/trigger-collection?slot=4pm&background=true&date=2026-10-24")
+            assert res_bg.status_code == 200
+            data_bg = res_bg.json()
+            assert data_bg["status"] == "QUEUED"
+            assert data_bg["snapshot_slot"] == "4pm"
+            assert mock_bg.called
+
+        # Concurrency active run test
+        from datetime import datetime
+        active_run = CollectionRun(
+            run_id="test_run_123",
+            started_at=datetime.utcnow(),
+            observation_date="2026-10-24",
+            snapshot_slot="8pm",
+            status="RUNNING",
+            provider="DIRECT_AIRBNB_WEB"
+        )
+        in_memory_db.add(active_run)
+        in_memory_db.commit()
+
+        res_active = client.get("/api/trigger-collection?slot=8pm&date=2026-10-24")
+        assert res_active.status_code == 200
+        assert res_active.json()["status"] == "ALREADY_RUNNING"
     finally:
         app.dependency_overrides.clear()
+
+
