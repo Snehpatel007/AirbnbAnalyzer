@@ -292,13 +292,38 @@ def init_db():
         with engine.begin() as conn:
             if not str(engine.url).startswith("sqlite"):
                 conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS min_nights INTEGER DEFAULT 1;"))
+                conn.execute(text("""
+                    UPDATE listings
+                    SET min_nights = sub.max_ms
+                    FROM (
+                        SELECT listing_id, MAX(minimum_stay) AS max_ms
+                        FROM calendar_observations
+                        WHERE minimum_stay > 1
+                        GROUP BY listing_id
+                    ) AS sub
+                    WHERE listings.listing_id = sub.listing_id;
+                """))
             else:
                 cols = [r[1] for r in conn.execute(text("PRAGMA table_info(listings);")).fetchall()]
                 if "min_nights" not in cols:
                     conn.execute(text("ALTER TABLE listings ADD COLUMN min_nights INTEGER DEFAULT 1;"))
+                conn.execute(text("""
+                    UPDATE listings
+                    SET min_nights = (
+                        SELECT MAX(minimum_stay)
+                        FROM calendar_observations
+                        WHERE calendar_observations.listing_id = listings.listing_id
+                        AND calendar_observations.minimum_stay > 1
+                    )
+                    WHERE EXISTS (
+                        SELECT 1 FROM calendar_observations
+                        WHERE calendar_observations.listing_id = listings.listing_id
+                        AND calendar_observations.minimum_stay > 1
+                    );
+                """))
     except Exception as e:
         import logging
-        logging.getLogger("airbnbanalyzer").warning(f"Could not auto-migrate min_nights column: {e}")
+        logging.getLogger("airbnbanalyzer").warning(f"Could not auto-migrate min_nights column or sync: {e}")
 
 
 
