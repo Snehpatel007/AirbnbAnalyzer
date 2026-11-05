@@ -1,5 +1,5 @@
 // Ahmedabad Airbnb Daily Market Tracker — Frontend Controller
-let horizonCharts = { '1d': null, '2d': null, '3d': null, '7d': null };
+let horizonCharts = { '1d': null, '2d': null, '3d': null };
 let currentMetric = 'unavailability'; // 'unavailability', 'adr', 'revpar', 'listings'
 let schedulerStatus = null;
 
@@ -298,7 +298,7 @@ async function loadDashboardData() {
         pill.className = 'coverage-status-pill partial';
       }
 
-      ['1d', '2d', '3d', '7d'].forEach(k => {
+      ['1d', '2d', '3d'].forEach(k => {
         const uEl = document.getElementById(`matrix-unavail-${k}`);
         const pEl = document.getElementById(`matrix-progress-${k}`);
         const nEl = document.getElementById(`matrix-nights-${k}`);
@@ -362,12 +362,11 @@ async function loadDashboardData() {
     pill.textContent = metric.status;
     pill.className = `coverage-status-pill ${metric.status === 'COMPLETE' ? '' : 'partial'}`;
 
-    // Populate Multi-Horizon Matrix Cards (Tonight 1D, Next 2D, Next 3D, Next 7D)
+    // Populate Multi-Horizon Matrix Cards (Tonight 1D, Next 2D, Next 3D)
     const matrixDefs = [
       { key: '1d', days: 1, uKey: 'unavailability_1d', nuKey: 'nights_unavail_1d', ntKey: 'nights_total_1d', adrKey: 'adr_1d', revparKey: 'revpar_1d' },
       { key: '2d', days: 2, uKey: 'unavailability_2d', nuKey: 'nights_unavail_2d', ntKey: 'nights_total_2d', adrKey: 'adr_2d', revparKey: 'revpar_2d' },
       { key: '3d', days: 3, uKey: 'unavailability_3d', nuKey: 'nights_unavail_3d', ntKey: 'nights_total_3d', adrKey: 'adr_3d', revparKey: 'revpar_3d' },
-      { key: '7d', days: 7, uKey: 'unavailability_7d', nuKey: 'nights_unavail_7d', ntKey: 'nights_total_7d', adrKey: 'adr_7d', revparKey: 'revpar_7d' },
     ];
 
     matrixDefs.forEach(m => {
@@ -440,7 +439,6 @@ async function loadAreaComparison() {
       const u1 = ((a.unavailability_1d !== undefined ? a.unavailability_1d : a.observed_unavailability_rate) * 100).toFixed(1);
       const u2 = ((a.unavailability_2d !== undefined ? a.unavailability_2d : a.observed_unavailability_rate) * 100).toFixed(1);
       const u3 = ((a.unavailability_3d !== undefined ? a.unavailability_3d : a.observed_unavailability_rate) * 100).toFixed(1);
-      const u7 = ((a.unavailability_7d !== undefined ? a.unavailability_7d : a.observed_unavailability_rate) * 100).toFixed(1);
 
       const nu1 = a.nights_unavail_1d !== undefined ? a.nights_unavail_1d : Math.round(a.active_listings * 1 * (u1/100));
       const nt1 = a.nights_total_1d !== undefined ? a.nights_total_1d : (a.active_listings * 1);
@@ -450,9 +448,6 @@ async function loadAreaComparison() {
 
       const nu3 = a.nights_unavail_3d !== undefined ? a.nights_unavail_3d : Math.round(a.active_listings * 3 * (u3/100));
       const nt3 = a.nights_total_3d !== undefined ? a.nights_total_3d : (a.active_listings * 3);
-
-      const nu7 = a.nights_unavail_7d !== undefined ? a.nights_unavail_7d : Math.round(a.active_listings * 7 * (u7/100));
-      const nt7 = a.nights_total_7d !== undefined ? a.nights_total_7d : (a.active_listings * 7);
 
       const adrVal = Math.round(a.adr_1d || a.adr);
       const revparVal = Math.round(a.revpar_1d || a.revpar_proxy);
@@ -464,7 +459,6 @@ async function loadAreaComparison() {
         <td class="text-right" title="Exact fraction: ${nu1}/${nt1} nights"><strong style="color: #fbbf24;">${u1}%</strong></td>
         <td class="text-right" title="Exact fraction: ${nu2}/${nt2} nights"><strong style="color: #38bdf8;">${u2}%</strong></td>
         <td class="text-right" title="Exact fraction: ${nu3}/${nt3} nights"><strong style="color: #c084fc;">${u3}%</strong></td>
-        <td class="text-right" title="Exact fraction: ${nu7}/${nt7} nights"><strong style="color: #34d399;">${u7}%</strong></td>
         <td class="text-right">₹${adrVal.toLocaleString()}</td>
         <td class="text-right" style="color: #c084fc; font-weight: 700;">₹${revparVal.toLocaleString()}</td>
         <td class="text-center"><span class="coverage-status-pill ${a.status === 'COMPLETE' ? '' : 'partial'}">${cov}%</span></td>
@@ -563,21 +557,6 @@ async function loadTrendsChart() {
           if (currentMetric === 'unavailability') return +( (r.unavailability_3d !== undefined ? r.unavailability_3d : r.observed_unavailability_rate) * 100).toFixed(1);
           if (currentMetric === 'adr') return Math.round(r.adr_3d || r.adr);
           if (currentMetric === 'revpar') return Math.round(r.revpar_3d || r.revpar_proxy);
-          return r.active_listings;
-        }
-      },
-      {
-        key: '7d',
-        canvasId: 'chart-7d',
-        badgeId: 'plot-badge-7d',
-        label: 'Next 7 Days (7D)',
-        color: '#34d399',
-        gradientStart: 'rgba(52, 211, 153, 0.4)',
-        gradientEnd: 'rgba(52, 211, 153, 0.0)',
-        getVal: (r) => {
-          if (currentMetric === 'unavailability') return +( (r.unavailability_7d !== undefined ? r.unavailability_7d : r.observed_unavailability_rate) * 100).toFixed(1);
-          if (currentMetric === 'adr') return Math.round(r.adr_7d || r.adr);
-          if (currentMetric === 'revpar') return Math.round(r.revpar_7d || r.revpar_proxy);
           return r.active_listings;
         }
       }
@@ -750,7 +729,6 @@ function renderListingsTable(listings) {
       <td class="text-center">${formatOccBadge(l.occ_1d, 1)}</td>
       <td class="text-center">${formatOccBadge(l.occ_2d, 2)}</td>
       <td class="text-center">${formatOccBadge(l.occ_3d, 3)}</td>
-      <td class="text-center">${formatOccBadge(l.occ_7d, 7)}</td>
       <td class="text-center"><strong>${l.bedrooms || 2} BHK</strong></td>
       <td class="text-center">${l.beds || 2} Beds</td>
       <td class="text-center"><span class="amenity-pill">📶 Wi-Fi</span> <span class="amenity-pill">❄️ AC</span></td>

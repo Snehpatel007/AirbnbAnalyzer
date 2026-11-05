@@ -72,7 +72,14 @@ class DailyAggregator:
         n_tot_1d, n_unavail_1d, unavail_1d, adr_1d, revpar_1d = calc_window(d1_dates)
         n_tot_2d, n_unavail_2d, unavail_2d, adr_2d, revpar_2d = calc_window(d2_dates)
         n_tot_3d, n_unavail_3d, unavail_3d, adr_3d, revpar_3d = calc_window(d3_dates)
-        n_tot_7d, n_unavail_7d, unavail_7d, adr_7d, revpar_7d = calc_window(d7_dates)
+        
+        # 7D: Discarded for standard 3-day ingestions; if full 7-day data is present (historical/tests), compute it
+        sub_7d = [r for r in records if r.calendar_date in d7_dates]
+        sub_3d = [r for r in records if r.calendar_date in d3_dates]
+        if len(sub_7d) > len(sub_3d):
+            n_tot_7d, n_unavail_7d, unavail_7d, adr_7d, revpar_7d = calc_window(d7_dates)
+        else:
+            n_tot_7d, n_unavail_7d, unavail_7d, adr_7d, revpar_7d = 0, 0, None, None, None
 
         available_nights_1d = max(0, n_tot_1d - n_unavail_1d)
         booked_nights_1d = sum(1 for r in records if r.calendar_date == self.observation_date and r.status == "booked")
@@ -173,21 +180,21 @@ class DailyAggregator:
         n_unavail_3d = sum((m.nights_unavail_3d or 0) for m in filtered_metrics)
         city_unavail_3d = round(n_unavail_3d / n_tot_3d, 4) if n_tot_3d > 0 else 0.0
 
-        # 7D Horizon (Next 7 Days, e.g. 10/21)
-        n_tot_7d = sum((m.nights_total_7d or (m.active_listings * 7)) for m in filtered_metrics)
+        # 7D Horizon: Discarded for standard 3-day ingestions; computed if 7D nights present
+        n_tot_7d = sum((m.nights_total_7d or 0) for m in filtered_metrics)
         n_unavail_7d = sum((m.nights_unavail_7d or 0) for m in filtered_metrics)
-        city_unavail_7d = round(n_unavail_7d / n_tot_7d, 4) if n_tot_7d > 0 else 0.0
+        city_unavail_7d = round(n_unavail_7d / n_tot_7d, 4) if n_tot_7d > 0 else None
 
-        # Weighted ADRs across 40 areas
+        # Weighted ADRs across areas
         adr_1d = round(sum((m.adr_1d or m.adr) * m.active_listings for m in filtered_metrics) / observed_cnt, 2) if observed_cnt > 0 else 0.0
         adr_2d = round(sum((m.adr_2d or m.adr) * m.active_listings for m in filtered_metrics) / observed_cnt, 2) if observed_cnt > 0 else 0.0
         adr_3d = round(sum((m.adr_3d or m.adr) * m.active_listings for m in filtered_metrics) / observed_cnt, 2) if observed_cnt > 0 else 0.0
-        adr_7d = round(sum((m.adr_7d or m.adr) * m.active_listings for m in filtered_metrics) / observed_cnt, 2) if observed_cnt > 0 else 0.0
+        adr_7d = round(sum((m.adr_7d or 0) * m.active_listings for m in filtered_metrics) / observed_cnt, 2) if (observed_cnt > 0 and any(m.adr_7d for m in filtered_metrics)) else None
 
         revpar_1d = round(adr_1d * city_unavail_1d, 2)
         revpar_2d = round(adr_2d * city_unavail_2d, 2)
         revpar_3d = round(adr_3d * city_unavail_3d, 2)
-        revpar_7d = round(adr_7d * city_unavail_7d, 2)
+        revpar_7d = round(adr_7d * city_unavail_7d, 2) if (adr_7d and city_unavail_7d) else None
 
         total_available = sum((m.available_listing_nights or 0) for m in filtered_metrics)
         if total_available == 0 and n_tot_1d > 0:

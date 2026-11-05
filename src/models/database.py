@@ -12,7 +12,8 @@ from sqlalchemy import (
     ForeignKey,
     UniqueConstraint,
     Text,
-    Index
+    Index,
+    text
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
 from config.settings import settings
@@ -40,6 +41,7 @@ class Listing(Base):
     first_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False, index=True)
+    min_nights = Column(Integer, default=1, nullable=False)
     source = Column(String(64), default="AIRBNB_OBSERVED", nullable=False)
     listing_url = Column(String(512), nullable=True)
 
@@ -73,6 +75,7 @@ class Listing(Base):
             "first_seen_at": self.first_seen_at.isoformat() if self.first_seen_at else None,
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
             "is_active": self.is_active,
+            "min_nights": getattr(self, "min_nights", 1) or 1,
             "source": self.source,
             "listing_url": self.airbnb_url,
         }
@@ -285,6 +288,18 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    try:
+        with engine.begin() as conn:
+            if not str(engine.url).startswith("sqlite"):
+                conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS min_nights INTEGER DEFAULT 1;"))
+            else:
+                cols = [r[1] for r in conn.execute(text("PRAGMA table_info(listings);")).fetchall()]
+                if "min_nights" not in cols:
+                    conn.execute(text("ALTER TABLE listings ADD COLUMN min_nights INTEGER DEFAULT 1;"))
+    except Exception as e:
+        import logging
+        logging.getLogger("airbnbanalyzer").warning(f"Could not auto-migrate min_nights column: {e}")
+
 
 
 def get_db() -> Generator[Session, None, None]:

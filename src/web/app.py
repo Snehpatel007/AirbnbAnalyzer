@@ -270,7 +270,6 @@ def get_market_overview(
                 "tonight_1d": calc_h_stats([r for r in rows if r[0] == d1], "Tonight (1 Night)", f"{d1}"),
                 "next_2d": calc_h_stats([r for r in rows if d1 <= r[0] <= d2], "Next 2 Days", f"{d1} to {d2}"),
                 "next_3d": calc_h_stats([r for r in rows if d1 <= r[0] <= d3], "Next 3 Days", f"{d1} to {d3}"),
-                "next_7d": calc_h_stats([r for r in rows if d1 <= r[0] <= d7], "Next 7 Days", f"{d1} to {d7}"),
             }
         except Exception:
             horizons = {}
@@ -473,15 +472,12 @@ def get_listings(
         u1 = 1 if d_map.get(d1) in ("unavailable", "booked", "blocked") else 0
         u2 = sum(1 for dt in [d1, d2] if d_map.get(dt) in ("unavailable", "booked", "blocked"))
         u3 = sum(1 for dt in [d1, d2, d3] if d_map.get(dt) in ("unavailable", "booked", "blocked"))
-        u7 = sum(1 for dt in d7_list if d_map.get(dt) in ("unavailable", "booked", "blocked"))
         item["occ_1d"] = f"{u1}/1"
         item["occ_2d"] = f"{u2}/2"
         item["occ_3d"] = f"{u3}/3"
-        item["occ_7d"] = f"{u7}/7"
         item["occ_1d_val"] = u1
         item["occ_2d_val"] = u2
         item["occ_3d_val"] = u3
-        item["occ_7d_val"] = u7
         listings_data.append(item)
 
     return {

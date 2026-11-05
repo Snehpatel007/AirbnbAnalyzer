@@ -33,7 +33,7 @@ class MarketConfig(BaseModel):
     country: str = "India"
     timezone: str = "Asia/Kolkata"
     collection_time_ist: str = os.getenv("COLLECTION_TIME_IST", "17:00")
-    calendar_horizon_days: int = 7
+    calendar_horizon_days: int = 3
     inactivity_days_threshold: int = 3
     default_currency: str = "INR"
     global_filters: GlobalFiltersConfig = Field(default_factory=GlobalFiltersConfig)

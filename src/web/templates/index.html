@@ -241,20 +241,6 @@
             <span>RevPAR: <strong class="revpar-color" id="matrix-revpar-3d">₹--</strong></span>
           </div>
         </div>
-
-        <!-- 7D Next 7 Days -->
-        <div class="matrix-card" id="card-matrix-7d">
-          <div class="matrix-card-header">
-            <span class="matrix-horizon-tag tag-7d">🗓️ Next 7 Days (1 Week)</span>
-            <span class="matrix-formula-badge" id="formula-badge-7d">-- / (-- &times; 7)</span>
-          </div>
-          <div class="matrix-rate" id="matrix-rate-7d">--%</div>
-          <div class="matrix-fraction" id="matrix-fraction-7d">-- / -- occupied nights</div>
-          <div class="matrix-meta">
-            <span>ADR: <strong id="matrix-adr-7d">₹--</strong></span>
-            <span>RevPAR: <strong class="revpar-color" id="matrix-revpar-7d">₹--</strong></span>
-          </div>
-        </div>
       </div>
     </section>
 
@@ -263,7 +249,7 @@
       <div class="panel-header">
         <div>
           <h2 class="panel-title" id="chart-section-title">Multi-Horizon Daily Market Trendlines</h2>
-          <p class="panel-subtitle" id="chart-section-sub">4 forward observation horizons (Tonight, 2D, 3D, 7D) &bull; Extended daily at 9:00 AM IST</p>
+          <p class="panel-subtitle" id="chart-section-sub">3 forward observation horizons (Tonight, 2D, 3D) &bull; Extended daily at 9:00 AM IST</p>
         </div>
         <div class="chart-tab-group" id="chart-tab-group">
           <button class="chart-tab active" data-metric="unavailability">Unavailability %</button>
@@ -306,17 +292,6 @@
             <canvas id="chart-3d"></canvas>
           </div>
         </div>
-
-        <!-- Plot 4: Next 7 Days (7D) -->
-        <div class="plot-box" id="plot-box-7d">
-          <div class="plot-box-header">
-            <span class="plot-tag tag-7d" style="padding: 0.2rem 0.55rem; border-radius: var(--radius-sm);">🗓️ Next 7 Days</span>
-            <span class="plot-badge" id="plot-badge-7d">--%</span>
-          </div>
-          <div class="plot-canvas-container">
-            <canvas id="chart-7d"></canvas>
-          </div>
-        </div>
       </div>
     </section>
 
@@ -325,7 +300,7 @@
       <div class="panel-header">
         <div>
           <h2 class="panel-title">Tracked Areas Comparison (Multi-Horizon)</h2>
-          <p class="panel-subtitle">{{ areas|length }} Discovered Ahmedabad sub-market areas across Tonight (1D), Next 2D, Next 3D, and Next 7D horizons</p>
+          <p class="panel-subtitle">{{ areas|length }} Discovered Ahmedabad sub-market areas across Tonight (1D), Next 2D, and Next 3D horizons</p>
         </div>
         <span class="badge-count" id="area-count-badge">{{ areas|length }} Discovered Areas</span>
       </div>
@@ -339,7 +314,6 @@
               <th class="text-right">Tonight (1D)</th>
               <th class="text-right">Next 2D</th>
               <th class="text-right">Next 3D</th>
-              <th class="text-right">Next 7D</th>
               <th class="text-right">ADR</th>
               <th class="text-right">RevPAR Proxy</th>
               <th class="text-center">Coverage</th>
@@ -374,10 +348,9 @@
               <th>Property Title</th>
               <th>Area</th>
               <th>Property Type</th>
-              <th class="text-center" title="Occupancy for Tomorrow night (0/1 or 1/1)">Tomorrow (1D)</th>
+              <th class="text-center" title="Occupancy for Tomorrow night (0/1 or 1/1)">Tonight (1D)</th>
               <th class="text-center" title="Occupancy for Next 2 Days (0/2, 1/2, 2/2)">Next 2 Days</th>
               <th class="text-center" title="Occupancy for Next 3 Days (0/3 to 3/3)">Next 3 Days</th>
-              <th class="text-center" title="Occupancy for Next 7 Days (0/7 to 7/7)">Next 7 Days</th>
               <th class="text-center">Bedrooms</th>
               <th class="text-center">Beds</th>
               <th class="text-center">Amenities</th>

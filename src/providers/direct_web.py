@@ -591,52 +591,144 @@ class DirectWebAirbnbProvider(AirbnbDataProvider):
         except Exception as e:
             logger.error(f"Error fetching live calendar for listing {listing_id}: {e}")
 
+    def get_listing_min_nights(self, listing_id: str) -> int:
+        """
+        Queries PdpAvailabilityCalendar to extract the host's declared minimum stay requirement (minNights).
+        Defaults to 1 night if unstated or if 1-night bookings are permitted.
+        """
+        clean_id = str(listing_id).strip().replace("airbnb_", "").replace("ab_", "")
+        today = datetime.now()
+        variables = {
+            "request": {
+                "count": 1,
+                "listingId": clean_id,
+                "month": today.month,
+                "year": today.year,
+            }
+        }
+        extensions = {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "8f08e03c7bd16fcad3c92a3592c19a8b559a0d0855a84028d1163d4733ed9ade",
+            }
+        }
+        params = {
+            "operationName": "PdpAvailabilityCalendar",
+            "locale": "en-IN",
+            "currency": "INR",
+            "variables": json.dumps(variables),
+            "extensions": json.dumps(extensions),
+        }
+        api_headers = {
+            **self.headers,
+            "Accept": "application/json",
+            "X-Airbnb-GraphQL-Platform": "web",
+            "X-Airbnb-GraphQL-Platform-Client": "minimalist-niobe",
+        }
+        try:
+            with httpx.Client(timeout=10.0, follow_redirects=True, headers=api_headers, cookies=self.cookies) as client:
+                resp = client.get("https://www.airbnb.co.in/api/v3/PdpAvailabilityCalendar", params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    merlin_obj = (data.get("data") or {}).get("merlin") or {}
+                    pdp_cal = merlin_obj.get("pdpAvailabilityCalendar") or {}
+                    months = pdp_cal.get("calendarMonths") or []
+                    for m in months:
+                        for d in m.get("days", []):
+                            mn = d.get("minNights")
+                            if mn is not None:
+                                return int(mn)
+            return 1
+        except Exception as e:
+            logger.debug(f"Could not determine min_nights for {listing_id}: {e}")
+            return 1
+
+    def get_bulk_min_nights(self, listing_ids: List[str], max_workers: int = 8) -> Dict[str, int]:
+        """
+        Concurrently queries minNights for a batch of listings.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+        results: Dict[str, int] = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_id = {executor.submit(self.get_listing_min_nights, lid): lid for lid in listing_ids}
+            for future in future_to_id:
+                lid = future_to_id[future]
+                try:
+                    results[lid] = future.result()
+                except Exception:
+                    results[lid] = 1
+        return results
+
     def get_horizon_calendar_by_date_search(
         self,
         master_listing_ids: List[str],
         start_date: Optional[str] = None,
-        horizon_days: int = 7,
+        horizon_days: int = 3,
         listing_base_prices: Optional[Dict[str, float]] = None,
+        max_stay_eval: int = 7,
     ) -> Dict[str, List[RawCalendarDay]]:
         """
-        Permanently avoids ~275 individual PDP calendar calls.
-        Instead, queries StaysSearch day-by-day across the metro bounding box for each date in horizon_days
-        (Day 1: 23->24, Day 2: 24->25, ..., Day 7: 29->30).
+        Calculates occupancy for the requested horizon (default 3 days: Day 1, Day 2, Day 3)
+        using multi-length date range searches (1 to 7 nights).
 
-        Any listing present in the search results for that 1-night stay is marked AVAILABLE (with observed nightly price).
-        Any master listing absent from the search results is marked UNAVAILABLE (occupied/blocked).
+        Host minimum stay criteria up to 7 nights are captured:
+        For each day D (e.g. Day 1):
+          Checkouts queried: D+1, D+2, D+3, D+4, D+5, D+6, D+7
+          Any listing appearing in ANY of these searches starting on D is confirmed UNOCCUPIED (available) on D.
+          Any master listing absent from ALL 7 searches is marked OCCUPIED (unavailable) on D.
+        Repeat for Day 2 (D+1) and Day 3 (D+2).
         """
+        from concurrent.futures import ThreadPoolExecutor
+
         start_dt = datetime.strptime(start_date, "%Y-%m-%d") if start_date else datetime.now()
         prices_map = listing_base_prices or {}
 
         # Initialize day records for all master listings: lid -> [RawCalendarDay, ...]
         results: Dict[str, List[RawCalendarDay]] = {lid: [] for lid in master_listing_ids}
-        master_set = set(master_listing_ids)
 
         for i in range(horizon_days):
             day_dt = start_dt + timedelta(days=i)
-            next_dt = day_dt + timedelta(days=1)
             checkin = day_dt.strftime("%Y-%m-%d")
-            checkout = next_dt.strftime("%Y-%m-%d")
 
-            print(f"  [Date Ingestion {i+1}/{horizon_days}] Querying available stays for {checkin} -> {checkout}...", flush=True)
-            day_listings = self.search_by_map_bounds(checkin=checkin, checkout=checkout, max_pages=6)
+            print(f"  [Date Ingestion Day {i+1}/{horizon_days}: {checkin}] Scanning 1 to {max_stay_eval} night stay lengths for minimum days criteria...", flush=True)
 
-            # Map of listing_id -> nightly_price for listings confirmed available on this date
-            available_on_date = {l.listing_id: l.nightly_price for l in day_listings}
-            print(f"    -> Found {len(available_on_date)} available listings on {checkin}", flush=True)
+            available_on_date: Dict[str, float] = {}  # lid -> price
+            min_stay_detected: Dict[str, int] = {}    # lid -> min stay nights
+
+            def query_stay(stay_len: int):
+                cout = (day_dt + timedelta(days=stay_len)).strftime("%Y-%m-%d")
+                res = self.search_by_map_bounds(checkin=checkin, checkout=cout, max_pages=4)
+                return stay_len, res
+
+            # Concurrently execute stay length queries with polite pacing (3 workers)
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = [executor.submit(query_stay, stay_len) for stay_len in range(1, max_stay_eval + 1)]
+                for fut in futures:
+                    stay_len, listings_found = fut.result()
+                    for item in listings_found:
+                        lid = item.listing_id
+                        if lid not in available_on_date:
+                            available_on_date[lid] = item.nightly_price
+                            min_stay_detected[lid] = stay_len
+                        else:
+                            if stay_len < min_stay_detected[lid]:
+                                min_stay_detected[lid] = stay_len
+
+            print(f"    -> {checkin}: Confirmed {len(available_on_date)} unoccupied listings across 1-{max_stay_eval} night filters", flush=True)
 
             for lid in master_listing_ids:
                 if lid in available_on_date:
                     status = "available"
                     bookable = True
                     price = available_on_date[lid] or prices_map.get(lid, 3200.0)
-                    raw_st = "search_available=True"
+                    min_stay = min_stay_detected.get(lid, 1)
+                    raw_st = f"unoccupied=True,min_stay_detected={min_stay}"
                 else:
                     status = "unavailable"
                     bookable = False
                     price = prices_map.get(lid, 3200.0)
-                    raw_st = "search_available=False"
+                    min_stay = 1
+                    raw_st = "unoccupied=False"
 
                 results[lid].append(
                     RawCalendarDay(
@@ -645,13 +737,13 @@ class DirectWebAirbnbProvider(AirbnbDataProvider):
                         status=status,
                         bookable=bookable,
                         price=price,
-                        minimum_stay=1,
+                        minimum_stay=min_stay,
                         raw_status=raw_st,
                         source="AIRBNB_SEARCH_OBSERVED",
                     )
                 )
 
-            time.sleep(0.4)  # brief polite pause between date searches
+            time.sleep(0.3)
 
         return results
 

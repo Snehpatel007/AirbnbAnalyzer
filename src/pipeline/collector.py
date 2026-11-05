@@ -208,7 +208,7 @@ class MarketCollector:
                 self.db.commit()
 
             if hasattr(self.provider, "get_horizon_calendar_by_date_search") and not self.fetch_individual_calendars:
-                print(f"⚡ Date-by-Date Map Ingestion: Fetching 7-day availability for {len(all_active_listing_ids)} listings without individual calendar calls...", flush=True)
+                print(f"⚡ Date-by-Date Multi-Length Stay Ingestion: Fetching {self.horizon_days}-day availability across 1-7 night filters for {len(all_active_listing_ids)} listings...", flush=True)
                 bulk_days = self.provider.get_horizon_calendar_by_date_search(
                     master_listing_ids=all_active_listing_ids,
                     start_date=self.observation_date,
