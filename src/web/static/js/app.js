@@ -102,6 +102,11 @@ function getSelectedSlot() {
   return slotSelect ? slotSelect.value : 'latest';
 }
 
+function getSelectedCriteria() {
+  const criteriaSelect = document.getElementById('criteria-select');
+  return criteriaSelect ? criteriaSelect.value : 'all';
+}
+
 async function updateSlotAvailability(date) {
   const slotSelect = document.getElementById('slot-select');
   if (!slotSelect) return;
@@ -162,6 +167,15 @@ function initEventListeners() {
       loadDashboardData();
       loadAreaComparison();
       loadTrendsChart();
+      loadMasterListings();
+    });
+  }
+
+  const criteriaSelect = document.getElementById('criteria-select');
+  if (criteriaSelect) {
+    criteriaSelect.addEventListener('change', () => {
+      loadDashboardData();
+      loadAreaComparison();
       loadMasterListings();
     });
   }
@@ -262,7 +276,7 @@ async function loadDashboardData() {
   const slot = getSelectedSlot();
 
   try {
-    const res = await fetch(`/api/overview?area=${encodeURIComponent(area)}&date=${encodeURIComponent(date)}&slot=${encodeURIComponent(slot)}`);
+    const res = await fetch(`/api/overview?area=${encodeURIComponent(area)}&date=${encodeURIComponent(date)}&slot=${encodeURIComponent(slot)}&criteria=${encodeURIComponent(getSelectedCriteria())}`);
     const data = await res.json();
     const metric = data.metric;
 
@@ -402,7 +416,7 @@ async function loadAreaComparison() {
   const slot = getSelectedSlot();
 
   try {
-    const res = await fetch(`/api/comparison?date=${encodeURIComponent(date)}&slot=${encodeURIComponent(slot)}`);
+    const res = await fetch(`/api/comparison?date=${encodeURIComponent(date)}&slot=${encodeURIComponent(slot)}&criteria=${encodeURIComponent(getSelectedCriteria())}`);
     const data = await res.json();
     const tbody = document.getElementById('area-table-body');
     if (!tbody) return;
@@ -676,13 +690,21 @@ async function loadMasterListings() {
   const slot = getSelectedSlot();
 
   try {
-    const res = await fetch(`/api/listings?area=${encodeURIComponent(area)}&date=${encodeURIComponent(date)}&slot=${encodeURIComponent(slot)}&limit=100`);
+    const res = await fetch(`/api/listings?area=${encodeURIComponent(area)}&date=${encodeURIComponent(date)}&slot=${encodeURIComponent(slot)}&criteria=${encodeURIComponent(getSelectedCriteria())}&limit=100`);
     const data = await res.json();
     masterListingsCache = data.listings || [];
     renderListingsTable(masterListingsCache);
   } catch (err) {
     console.error('Failed to load listings:', err);
   }
+}
+
+function formatCriteriaBadge(minNights) {
+  const n = parseInt(minNights, 10) || 1;
+  if (n <= 1) {
+    return `<span class="badge-criteria crit-none" title="No minimum stay criteria (1 night allowed)">No Criteria</span>`;
+  }
+  return `<span class="badge-criteria crit-min" title="Minimum ${n} days stay required">${n}D Criteria</span>`;
 }
 
 function formatOccBadge(occStr, defaultTotal) {
@@ -704,7 +726,7 @@ function renderListingsTable(listings) {
   if (!tbody) return;
 
   if (listings.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="14" class="text-center py-4 text-muted">No listings matched.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15" class="text-center py-4 text-muted">No listings matched.</td></tr>';
     return;
   }
 
@@ -726,6 +748,7 @@ function renderListingsTable(listings) {
       </td>
       <td><span class="badge-count">${l.area}</span></td>
       <td class="text-secondary">${l.property_type || 'Apartment'}</td>
+      <td class="text-center">${formatCriteriaBadge(l.min_nights)}</td>
       <td class="text-center">${formatOccBadge(l.occ_1d, 1)}</td>
       <td class="text-center">${formatOccBadge(l.occ_2d, 2)}</td>
       <td class="text-center">${formatOccBadge(l.occ_3d, 3)}</td>

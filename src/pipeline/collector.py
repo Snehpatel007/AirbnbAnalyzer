@@ -257,6 +257,19 @@ class MarketCollector:
                 self.db.bulk_insert_mappings(CalendarObservation, new_calendar_obs)
                 self.db.commit()
 
+                # Sync detected min_stay into listings table
+                listing_min_stay = {}
+                for obs in new_calendar_obs:
+                    lid = obs["listing_id"]
+                    ms = obs.get("minimum_stay", 1) or 1
+                    if lid not in listing_min_stay or ms > listing_min_stay[lid]:
+                        listing_min_stay[lid] = ms
+                for lid, ms in listing_min_stay.items():
+                    l_obj = self.db.query(Listing).filter(Listing.listing_id == lid).first()
+                    if l_obj and l_obj.min_nights != ms:
+                        l_obj.min_nights = ms
+                self.db.commit()
+
             # 4. Calculate Area Metrics
             aggregator = DailyAggregator(self.db, self.observation_date, snapshot_slot=self.snapshot_slot)
             for area, lids in active_listings_by_area.items():

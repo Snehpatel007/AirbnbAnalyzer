@@ -97,6 +97,22 @@
       </div>
 
       <div class="filter-item">
+        <label for="criteria-select">Stay Criteria</label>
+        <div class="select-wrapper">
+          <select id="criteria-select" class="form-select">
+            <option value="all" selected>All Combined</option>
+            <option value="1">No Criteria (1 Night)</option>
+            <option value="2">2 Days Criteria</option>
+            <option value="3">3 Days Criteria</option>
+            <option value="4">4 Days Criteria</option>
+            <option value="5">5 Days Criteria</option>
+            <option value="6">6 Days Criteria</option>
+            <option value="7">7 Days Criteria (7+ Nights)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="filter-item">
         <label>Primary Source</label>
         <div class="source-tag">
           <span class="tag-status live"></span>
@@ -348,6 +364,7 @@
               <th>Property Title</th>
               <th>Area</th>
               <th>Property Type</th>
+              <th class="text-center">Criteria</th>
               <th class="text-center" title="Occupancy for Tomorrow night (0/1 or 1/1)">Tonight (1D)</th>
               <th class="text-center" title="Occupancy for Next 2 Days (0/2, 1/2, 2/2)">Next 2 Days</th>
               <th class="text-center" title="Occupancy for Next 3 Days (0/3 to 3/3)">Next 3 Days</th>
@@ -361,7 +378,7 @@
           </thead>
           <tbody id="listings-table-body">
             <tr>
-              <td colspan="14" class="text-center py-4 text-muted">Loading listing universe...</td>
+              <td colspan="15" class="text-center py-4 text-muted">Loading listing universe...</td>
             </tr>
           </tbody>
         </table>
