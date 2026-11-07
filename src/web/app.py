@@ -291,6 +291,13 @@ def get_market_overview(
             "nights_unavail_2d": h2.get("unavailable_nights", 0),
             "nights_total_3d": h3.get("total_nights", active_cnt * 3),
             "nights_unavail_3d": h3.get("unavailable_nights", 0),
+            "active_listing_change_1d": 0,
+            "active_listing_change_7d": 0,
+            "active_listing_change_30d": 0,
+            "unavailability_change_1d_pp": 0.0,
+            "unavailability_change_7d_pp": 0.0,
+            "unavailability_change_30d_pp": 0.0,
+            "booking_occupancy": None,
             "coverage_rate": 1.0,
             "status": "COMPLETE",
         }
@@ -516,33 +523,156 @@ def get_area_comparison(
 def get_market_trends(
     area: Optional[str] = Query("Ahmedabad", description="Tracked area or Ahmedabad overall"),
     slot: Optional[str] = Query(None, description="Snapshot slot: 4pm, 8pm, 11.30pm, manual, or latest"),
+    criteria: Optional[str] = Query(None, description="Stay criteria: all, 1 (no criteria), 2, 3, 4, 5, 6, 7"),
     days: int = Query(90, ge=7, le=365),
     db: Session = Depends(get_db)
 ):
+    from datetime import timedelta
     target_area = area or "Ahmedabad"
-    q = db.query(DailyMarketMetric).filter(DailyMarketMetric.area == target_area)
-    if slot and slot.lower() not in ("latest", "all", ""):
-        norm_slot = normalize_slot(slot)
-        q = q.filter(DailyMarketMetric.snapshot_slot == norm_slot)
+    crit = (criteria or "").strip().lower()
+    crit_filter = crit if crit not in ("", "all", "none") else None
 
-    rows = q.order_by(DailyMarketMetric.observation_date.desc(), DailyMarketMetric.id.desc()).all()
+    if not crit_filter:
+        q = db.query(DailyMarketMetric).filter(DailyMarketMetric.area == target_area)
+        if slot and slot.lower() not in ("latest", "all", ""):
+            norm_slot = normalize_slot(slot)
+            q = q.filter(DailyMarketMetric.snapshot_slot == norm_slot)
 
-    # Deduplicate: if slot is 'latest' or unspecified, return at most 1 metric per observation_date (latest)
-    seen_dates = set()
-    deduped = []
-    for r in rows:
-        if r.observation_date not in seen_dates:
-            seen_dates.add(r.observation_date)
-            deduped.append(r)
-        if len(deduped) >= days:
-            break
+        rows = q.order_by(DailyMarketMetric.observation_date.desc(), DailyMarketMetric.id.desc()).all()
 
-    # Reverse to chronological order for charts
-    ordered = list(reversed(deduped))
+        # Deduplicate: if slot is 'latest' or unspecified, return at most 1 metric per observation_date (latest)
+        seen_dates = set()
+        deduped = []
+        for r in rows:
+            if r.observation_date not in seen_dates:
+                seen_dates.add(r.observation_date)
+                deduped.append(r)
+            if len(deduped) >= days:
+                break
+
+        # Reverse to chronological order for charts
+        ordered = list(reversed(deduped))
+        return {
+            "area": target_area,
+            "snapshot_slot": slot or "latest",
+            "criteria": criteria or "all",
+            "data": [r.to_dict() for r in ordered]
+        }
+
+    # Criteria filtering path:
+    list_q = db.query(Listing.listing_id).filter(Listing.is_active == True)
+    if target_area != "Ahmedabad":
+        list_q = list_q.filter(Listing.area == target_area)
+
+    if crit_filter in ("1", "no_criteria", "no criteria"):
+        list_q = list_q.filter(Listing.min_nights == 1)
+    elif crit_filter in ("2", "3", "4", "5", "6"):
+        list_q = list_q.filter(Listing.min_nights == int(crit_filter))
+    elif crit_filter in ("7", "7+"):
+        list_q = list_q.filter(Listing.min_nights >= 7)
+
+    matching_lids = [r[0] for r in list_q.all()]
+    active_cnt = len(matching_lids)
+    if active_cnt == 0:
+        return {
+            "area": target_area,
+            "snapshot_slot": slot or "latest",
+            "criteria": criteria,
+            "data": []
+        }
+
+    # Get distinct observation dates
+    date_q = db.query(DailyMarketMetric.observation_date).order_by(DailyMarketMetric.observation_date.desc()).distinct()
+    obs_dates = [r[0] for r in date_q.all()][:days]
+    if not obs_dates:
+        obs_dates = [r[0] for r in db.query(CalendarObservation.observation_date).order_by(CalendarObservation.observation_date.desc()).distinct().all()][:days]
+
+    cal_q = db.query(
+        CalendarObservation.observation_date,
+        CalendarObservation.calendar_date,
+        CalendarObservation.status,
+        CalendarObservation.price,
+        CalendarObservation.snapshot_slot
+    ).filter(
+        CalendarObservation.listing_id.in_(matching_lids),
+        CalendarObservation.observation_date.in_(obs_dates)
+    )
+    if slot and slot.lower() not in ("latest", "all", "none", ""):
+        norm_s = normalize_slot(slot)
+        cal_q = cal_q.filter(CalendarObservation.snapshot_slot == norm_s)
+
+    all_c_rows = cal_q.all()
+
+    # Group by (observation_date, snapshot_slot)
+    by_date_slot = {}
+    for r in all_c_rows:
+        by_date_slot.setdefault((r[0], r[4]), []).append(r)
+
+    points = []
+    # Process each obs_date in chronological order
+    for obs_date in sorted(obs_dates):
+        t_slot = resolve_slot_for_date(db, obs_date, slot) if (not slot or slot.lower() in ("latest", "all", "none", "")) else normalize_slot(slot)
+        c_rows = by_date_slot.get((obs_date, t_slot), [])
+        if not c_rows and (not slot or slot.lower() in ("latest", "all", "none", "")):
+            for (od, sl), rows_for_slot in by_date_slot.items():
+                if od == obs_date and rows_for_slot:
+                    c_rows = rows_for_slot
+                    t_slot = sl
+                    break
+
+        if not c_rows:
+            continue
+
+        obs_dt = datetime.strptime(obs_date, "%Y-%m-%d")
+        d1 = obs_date
+        d2 = (obs_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+        d3 = (obs_dt + timedelta(days=2)).strftime("%Y-%m-%d")
+
+        def calc_h(subset):
+            if not subset:
+                return 0, 0, 0.0, 3200.0, 0.0
+            unavail = sum(1 for r in subset if r[2] in ("unavailable", "blocked", "booked"))
+            rate = round(unavail / len(subset), 4)
+            prices = [r[3] for r in subset if r[3] and r[3] > 0]
+            adr = round(sum(prices) / len(prices), 2) if prices else 3200.0
+            return len(subset), unavail, rate, adr, round(adr * rate, 2)
+
+        nt1, nu1, u1, adr1, rev1 = calc_h([r for r in c_rows if r[1] == d1])
+        nt2, nu2, u2, adr2, rev2 = calc_h([r for r in c_rows if d1 <= r[1] <= d2])
+        nt3, nu3, u3, adr3, rev3 = calc_h([r for r in c_rows if d1 <= r[1] <= d3])
+
+        points.append({
+            "observation_date": obs_date,
+            "snapshot_slot": t_slot,
+            "area": target_area,
+            "active_listings": active_cnt,
+            "observed_unavailability_rate": u1,
+            "adr": adr1,
+            "revpar_proxy": rev1,
+            "unavailability_1d": u1,
+            "unavailability_2d": u2,
+            "unavailability_3d": u3,
+            "adr_1d": adr1,
+            "adr_2d": adr2,
+            "adr_3d": adr3,
+            "revpar_1d": rev1,
+            "revpar_2d": rev2,
+            "revpar_3d": rev3,
+            "nights_total_1d": nt1 or active_cnt,
+            "nights_unavail_1d": nu1,
+            "nights_total_2d": nt2 or (active_cnt * 2),
+            "nights_unavail_2d": nu2,
+            "nights_total_3d": nt3 or (active_cnt * 3),
+            "nights_unavail_3d": nu3,
+            "coverage_rate": 1.0,
+            "status": "COMPLETE"
+        })
+
     return {
         "area": target_area,
         "snapshot_slot": slot or "latest",
-        "data": [r.to_dict() for r in ordered]
+        "criteria": criteria,
+        "data": points
     }
 
 

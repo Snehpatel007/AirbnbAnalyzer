@@ -128,5 +128,13 @@ def test_stay_criteria_filtering(test_db_session):
         assert areas[0]["area"] == "Tragad"
         assert areas[0]["active_listings"] == 1
 
+        # 6. Trends endpoint with criteria=3
+        res_trends = client.get(f"/api/trends?area=Tragad&criteria=3")
+        assert res_trends.status_code == 200
+        t_data = res_trends.json()["data"]
+        assert len(t_data) == 1
+        assert t_data[0]["active_listings"] == 1
+        assert t_data[0]["unavailability_1d"] == 1.0
+
     finally:
         app.dependency_overrides.clear()
