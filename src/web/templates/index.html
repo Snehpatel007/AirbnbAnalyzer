@@ -15,7 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="/static/css/styles.css?v=4.1">
+  <link rel="stylesheet" href="/static/css/styles.css?v=4.2">
 </head>
 <body class="dark-theme">
   <!-- Executive Backdrop Mesh -->
@@ -23,111 +23,112 @@
 
   <header class="app-header" id="app-header">
     <div class="header-container">
-      <div class="brand-group">
-        <div class="brand-badge">
-          <span class="pulse-dot"></span>
-          <span>LIVE OBSERVED TRACKER</span>
+      <!-- Top Row: Brand & System Actions -->
+      <div class="header-top-row">
+        <div class="brand-group">
+          <div class="brand-badge">
+            <span class="pulse-dot"></span>
+            <span>LIVE OBSERVED TRACKER</span>
+          </div>
+          <h1 class="brand-title">Ahmedabad <span class="brand-title-accent">Airbnb Tracker</span></h1>
+          <p class="brand-subtitle">Lease-Model Operational Market Intelligence &bull; Daily Ingestions: 4:00 PM, 8:00 PM, 11:30 PM IST</p>
         </div>
-        <h1 class="brand-title">Ahmedabad <span class="gradient-text">Airbnb Tracker</span></h1>
-        <p class="brand-subtitle">Lease-Model Operational Market Intelligence &bull; Daily Ingestions: 4:00 PM, 8:00 PM, 11:30 PM IST</p>
+
+        <div class="header-status-group">
+          <div class="ist-clock-card" id="ist-clock-card">
+            <span class="clock-label">AHMEDABAD (IST)</span>
+            <span class="clock-time" id="live-ist-time">--:--:-- IST</span>
+            <span class="schedule-pill" id="scheduler-pill" title="Click to view scheduled jobs">⏱️ Next Ingestion: --</span>
+          </div>
+          
+          <div class="header-actions">
+            <button id="btn-trigger-collection" class="btn btn-primary" title="Trigger instant ingestion">
+              <span class="btn-icon">⚡</span>
+              <span>Trigger Ingestion</span>
+            </button>
+            <button id="btn-open-report" class="btn btn-secondary" title="View Daily Market Report">
+              <span class="btn-icon">📋</span>
+              <span>Report</span>
+            </button>
+            <button id="btn-view-runs" class="btn btn-outline" title="Audit Runs & Coverage">
+              <span class="btn-icon">⏱️</span>
+              <span>Audit</span>
+            </button>
+            <button id="btn-toggle-ai" class="btn btn-ai-glow" title="Ask AI Leasing Analyst">
+              <span class="btn-icon">✨</span>
+              <span>AI Analyst</span>
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div class="header-status-group">
-        <div class="ist-clock-card" id="ist-clock-card">
-          <span class="clock-label">AHMEDABAD (IST)</span>
-          <span class="clock-time" id="live-ist-time">--:--:-- IST</span>
-          <span class="schedule-pill" id="scheduler-pill" title="Click to view scheduled jobs">⏱️ Next Ingestion: --</span>
+      <!-- Integrated Control & Filter Bar (Cleanly attached inside header, no floating gaps or extra naive line) -->
+      <div class="header-controls-bar" id="controls-section">
+        <div class="filter-item">
+          <label for="area-select">Tracked Market Area</label>
+          <div class="select-wrapper">
+            <select id="area-select" class="form-select">
+              <option value="Ahmedabad" selected>Ahmedabad (City-Wide)</option>
+              {% for a in areas %}
+                <option value="{{ a }}">{{ a }}</option>
+              {% endfor %}
+            </select>
+          </div>
         </div>
-        
-        <div class="header-actions">
-          <button id="btn-trigger-collection" class="btn btn-primary" title="Trigger instant ingestion">
-            <span class="btn-icon">⚡</span>
-            <span>Trigger Ingestion</span>
-          </button>
-          <button id="btn-open-report" class="btn btn-secondary" title="View Daily Market Report">
-            <span class="btn-icon">📋</span>
-            <span>Market Report</span>
-          </button>
-          <button id="btn-view-runs" class="btn btn-outline" title="Audit Runs & Coverage">
-            <span class="btn-icon">⏱️</span>
-            <span>Audit Runs</span>
-          </button>
-          <button id="btn-toggle-ai" class="btn btn-ai-glow" title="Ask AI Leasing Analyst">
-            <span class="btn-icon">✨</span>
-            <span>Ask AI Analyst</span>
-          </button>
+
+        <div class="filter-item">
+          <label for="obs-date-input">Observation Date</label>
+          <input type="date" id="obs-date-input" class="form-input">
+        </div>
+
+        <div class="filter-item">
+          <label for="slot-select">Collection Slot</label>
+          <div class="select-wrapper">
+            <select id="slot-select" class="form-select">
+              <option value="latest" selected>⚡ Latest Available</option>
+              <option value="4pm">4:00 PM IST (4pm)</option>
+              <option value="8pm">8:00 PM IST (8pm)</option>
+              <option value="11.30pm">11:30 PM IST (11.30pm)</option>
+              <option value="manual">Manual Ingestion</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="filter-item">
+          <label for="criteria-select">Stay Criteria</label>
+          <div class="select-wrapper">
+            <select id="criteria-select" class="form-select">
+              <option value="all" selected>All Combined</option>
+              <option value="1">No Criteria (1 Night)</option>
+              <option value="2">2 Days Criteria</option>
+              <option value="3">3 Days Criteria</option>
+              <option value="4">4 Days Criteria</option>
+              <option value="5">5 Days Criteria</option>
+              <option value="6">6 Days Criteria</option>
+              <option value="7">7 Days Criteria (7+ Nights)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="filter-item">
+          <label>Primary Source</label>
+          <div class="source-tag">
+            <span class="tag-status live"></span>
+            <span id="active-provider-label">AIRBNB_OBSERVED</span>
+          </div>
+        </div>
+
+        <div class="filter-item filter-item-chips">
+          <label>Global Filters Applied</label>
+          <div class="global-filters-badge-group">
+            <span class="filter-chip">🛏️ 2+ BHK &bull; 2+ Beds</span>
+            <span class="filter-chip">📶 Wi-Fi</span>
+            <span class="filter-chip">❄️ AC</span>
+          </div>
         </div>
       </div>
     </div>
   </header>
-
-  <!-- Control & Filter Bar -->
-  <section class="controls-section" id="controls-section">
-    <div class="controls-container">
-      <div class="filter-item">
-        <label for="area-select">Tracked Market Area</label>
-        <div class="select-wrapper">
-          <select id="area-select" class="form-select">
-            <option value="Ahmedabad" selected>Ahmedabad (City-Wide)</option>
-            {% for a in areas %}
-              <option value="{{ a }}">{{ a }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-
-      <div class="filter-item">
-        <label for="obs-date-input">Observation Date</label>
-        <input type="date" id="obs-date-input" class="form-input">
-      </div>
-
-      <div class="filter-item">
-        <label for="slot-select">Collection Slot</label>
-        <div class="select-wrapper">
-          <select id="slot-select" class="form-select">
-            <option value="latest" selected>⚡ Latest Available</option>
-            <option value="4pm">4:00 PM IST (4pm)</option>
-            <option value="8pm">8:00 PM IST (8pm)</option>
-            <option value="11.30pm">11:30 PM IST (11.30pm)</option>
-            <option value="manual">Manual Ingestion</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="filter-item">
-        <label for="criteria-select">Stay Criteria</label>
-        <div class="select-wrapper">
-          <select id="criteria-select" class="form-select">
-            <option value="all" selected>All Combined</option>
-            <option value="1">No Criteria (1 Night)</option>
-            <option value="2">2 Days Criteria</option>
-            <option value="3">3 Days Criteria</option>
-            <option value="4">4 Days Criteria</option>
-            <option value="5">5 Days Criteria</option>
-            <option value="6">6 Days Criteria</option>
-            <option value="7">7 Days Criteria (7+ Nights)</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="filter-item">
-        <label>Primary Source</label>
-        <div class="source-tag">
-          <span class="tag-status live"></span>
-          <span id="active-provider-label">AIRBNB_OBSERVED</span>
-        </div>
-      </div>
-
-      <div class="filter-item">
-        <label>Global Filters Applied</label>
-        <div class="global-filters-badge-group">
-          <span class="filter-chip">🛏️ 2+ BHK &bull; 2+ Beds</span>
-          <span class="filter-chip">📶 Wi-Fi</span>
-          <span class="filter-chip">❄️ AC</span>
-        </div>
-      </div>
-    </div>
-  </section>
 
   <!-- Main Content Layout -->
   <main class="main-content" id="main-content">
@@ -352,6 +353,35 @@
           </tbody>
         </table>
       </div>
+
+      <!-- Professional Table Pagination Bar for Tracked Areas -->
+      <div class="table-pagination-bar" id="area-pagination-bar">
+        <div class="pagination-info">
+          Showing <span id="area-pag-start" class="pag-highlight">0</span> to <span id="area-pag-end" class="pag-highlight">0</span> of <span id="area-pag-total" class="pag-highlight">0</span> areas
+        </div>
+        
+        <div class="pagination-controls">
+          <div class="pagination-page-size">
+            <label for="area-page-size">Rows per page</label>
+            <div class="select-wrapper select-xs">
+              <select id="area-page-size" class="form-select pagination-select">
+                <option value="10" selected>10</option>
+                <option value="15">15</option>
+                <option value="25">25</option>
+                <option value="50">All</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="pagination-nav">
+            <button id="btn-area-page-first" class="btn-page-nav" title="First Page" disabled>&laquo;</button>
+            <button id="btn-area-page-prev" class="btn-page-nav" title="Previous Page" disabled>&lsaquo;</button>
+            <div class="pagination-pages" id="area-pagination-pages-container"></div>
+            <button id="btn-area-page-next" class="btn-page-nav" title="Next Page" disabled>&rsaquo;</button>
+            <button id="btn-area-page-last" class="btn-page-nav" title="Last Page" disabled>&raquo;</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- Master Listing Universe Section -->
@@ -519,6 +549,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- App Logic JS -->
-  <script src="/static/js/app.js?v=4.1"></script>
+  <script src="/static/js/app.js?v=4.2"></script>
 </body>
 </html>

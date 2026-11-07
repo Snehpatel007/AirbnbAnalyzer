@@ -274,6 +274,30 @@ function initEventListeners() {
     });
   }
 
+  // Area Comparison Page Size Selector
+  const areaPageSizeSelect = document.getElementById('area-page-size');
+  if (areaPageSizeSelect) {
+    areaPageSizeSelect.addEventListener('change', (e) => {
+      areaPageSize = parseInt(e.target.value, 10) || 10;
+      currentAreaPage = 1;
+      renderPaginatedAreas();
+    });
+  }
+
+  // Area Comparison Pagination Navigation Buttons
+  const btnAreaFirst = document.getElementById('btn-area-page-first');
+  const btnAreaPrev = document.getElementById('btn-area-page-prev');
+  const btnAreaNext = document.getElementById('btn-area-page-next');
+  const btnAreaLast = document.getElementById('btn-area-page-last');
+
+  if (btnAreaFirst) btnAreaFirst.addEventListener('click', () => setAreaPage(1));
+  if (btnAreaPrev) btnAreaPrev.addEventListener('click', () => setAreaPage(currentAreaPage - 1));
+  if (btnAreaNext) btnAreaNext.addEventListener('click', () => setAreaPage(currentAreaPage + 1));
+  if (btnAreaLast) btnAreaLast.addEventListener('click', () => {
+    const totalPages = Math.ceil(currentFilteredAreas.length / areaPageSize) || 1;
+    setAreaPage(totalPages);
+  });
+
   // Listings Page Size Selector
   const pageSizeSelect = document.getElementById('listings-page-size');
   if (pageSizeSelect) {
@@ -461,16 +485,79 @@ async function loadDashboardData() {
   }
 }
 
-// 4. Area Comparison Table (Multi-Horizon: Tonight, 2D, 3D, 7D)
+// 4. Area Comparison Table (Multi-Horizon: Tonight, 2D, 3D)
 let areaComparisonCache = [];
+let currentFilteredAreas = [];
+let currentAreaPage = 1;
+let areaPageSize = 10;
 
 function filterAreaComparisonTable(query) {
   const cleanQ = (query || '').trim().toLowerCase();
   if (!cleanQ) {
-    renderAreaComparisonTable(areaComparisonCache);
+    currentFilteredAreas = [...areaComparisonCache];
   } else {
-    renderAreaComparisonTable(areaComparisonCache.filter(a => a.area && a.area.toLowerCase().includes(cleanQ)));
+    currentFilteredAreas = areaComparisonCache.filter(a => a.area && a.area.toLowerCase().includes(cleanQ));
   }
+  currentAreaPage = 1;
+  renderPaginatedAreas();
+}
+
+function setAreaPage(page) {
+  const totalPages = Math.ceil(currentFilteredAreas.length / areaPageSize) || 1;
+  currentAreaPage = Math.max(1, Math.min(page, totalPages));
+  renderPaginatedAreas();
+}
+
+function renderPaginatedAreas() {
+  const total = currentFilteredAreas.length;
+  const totalPages = Math.ceil(total / areaPageSize) || 1;
+  if (currentAreaPage > totalPages) currentAreaPage = totalPages;
+
+  const startIndex = (currentAreaPage - 1) * areaPageSize;
+  const endIndex = Math.min(startIndex + areaPageSize, total);
+  const pageItems = currentFilteredAreas.slice(startIndex, endIndex);
+
+  renderAreaComparisonTable(pageItems);
+  updateAreaPaginationControls(startIndex, endIndex, total, totalPages);
+}
+
+function updateAreaPaginationControls(start, end, total, totalPages) {
+  const pagStart = document.getElementById('area-pag-start');
+  const pagEnd = document.getElementById('area-pag-end');
+  const pagTotal = document.getElementById('area-pag-total');
+  const btnFirst = document.getElementById('btn-area-page-first');
+  const btnPrev = document.getElementById('btn-area-page-prev');
+  const btnNext = document.getElementById('btn-area-page-next');
+  const btnLast = document.getElementById('btn-area-page-last');
+  const pagesContainer = document.getElementById('area-pagination-pages-container');
+
+  if (pagStart) pagStart.textContent = total === 0 ? '0' : (start + 1).toLocaleString();
+  if (pagEnd) pagEnd.textContent = end.toLocaleString();
+  if (pagTotal) pagTotal.textContent = total.toLocaleString();
+
+  if (btnFirst) btnFirst.disabled = currentAreaPage <= 1;
+  if (btnPrev) btnPrev.disabled = currentAreaPage <= 1;
+  if (btnNext) btnNext.disabled = currentAreaPage >= totalPages;
+  if (btnLast) btnLast.disabled = currentAreaPage >= totalPages;
+
+  if (!pagesContainer) return;
+  pagesContainer.innerHTML = '';
+
+  const range = generatePageRange(currentAreaPage, totalPages);
+  range.forEach(p => {
+    if (p === '...') {
+      const span = document.createElement('span');
+      span.className = 'page-pill ellipsis';
+      span.textContent = '…';
+      pagesContainer.appendChild(span);
+    } else {
+      const btn = document.createElement('button');
+      btn.className = `page-pill ${p === currentAreaPage ? 'active' : ''}`;
+      btn.textContent = p;
+      btn.addEventListener('click', () => setAreaPage(p));
+      pagesContainer.appendChild(btn);
+    }
+  });
 }
 
 function renderAreaComparisonTable(areas) {
@@ -563,10 +650,12 @@ async function loadAreaComparison() {
     const areaSearchInput = document.getElementById('area-search-input');
     const q = areaSearchInput ? areaSearchInput.value.trim().toLowerCase() : '';
     if (q) {
-      renderAreaComparisonTable(areaComparisonCache.filter(a => a.area && a.area.toLowerCase().includes(q)));
+      currentFilteredAreas = areaComparisonCache.filter(a => a.area && a.area.toLowerCase().includes(q));
     } else {
-      renderAreaComparisonTable(areaComparisonCache);
+      currentFilteredAreas = [...areaComparisonCache];
     }
+    currentAreaPage = 1;
+    renderPaginatedAreas();
 
   } catch (err) {
     console.error('Failed to load comparison table:', err);
