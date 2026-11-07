@@ -684,7 +684,7 @@ def get_listings(
     date: Optional[str] = Query(None, description="Observation date YYYY-MM-DD for occupancy calculations"),
     slot: Optional[str] = Query(None, description="Snapshot slot: 4pm, 8pm, 11.30pm, manual, or latest"),
     criteria: Optional[str] = Query(None, description="Stay criteria: all, 1 (no criteria), 2, 3, 4, 5, 6, 7"),
-    limit: int = Query(50, le=200),
+    limit: int = Query(300, le=1000),
     db: Session = Depends(get_db)
 ):
     from sqlalchemy import or_

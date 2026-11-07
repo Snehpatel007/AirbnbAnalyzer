@@ -15,13 +15,11 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="/static/css/styles.css?v=3.6">
+  <link rel="stylesheet" href="/static/css/styles.css?v=4.1">
 </head>
 <body class="dark-theme">
-  <!-- Animated Background Gradient Aura -->
-  <div class="ambient-glow glow-1"></div>
-  <div class="ambient-glow glow-2"></div>
-  <div class="ambient-glow glow-3"></div>
+  <!-- Executive Backdrop Mesh -->
+  <div class="app-backdrop"></div>
 
   <header class="app-header" id="app-header">
     <div class="header-container">
@@ -223,6 +221,9 @@
             <span class="matrix-formula-badge" id="formula-badge-1d">-- / (-- &times; 1)</span>
           </div>
           <div class="matrix-rate" id="matrix-rate-1d">--%</div>
+          <div class="matrix-meter-track">
+            <div class="matrix-meter-bar bar-1d" id="matrix-meter-1d" style="width: 0%;"></div>
+          </div>
           <div class="matrix-fraction" id="matrix-fraction-1d">-- / -- occupied nights</div>
           <div class="matrix-meta">
             <span>ADR: <strong id="matrix-adr-1d">₹--</strong></span>
@@ -237,6 +238,9 @@
             <span class="matrix-formula-badge" id="formula-badge-2d">-- / (-- &times; 2)</span>
           </div>
           <div class="matrix-rate" id="matrix-rate-2d">--%</div>
+          <div class="matrix-meter-track">
+            <div class="matrix-meter-bar bar-2d" id="matrix-meter-2d" style="width: 0%;"></div>
+          </div>
           <div class="matrix-fraction" id="matrix-fraction-2d">-- / -- occupied nights</div>
           <div class="matrix-meta">
             <span>ADR: <strong id="matrix-adr-2d">₹--</strong></span>
@@ -251,6 +255,9 @@
             <span class="matrix-formula-badge" id="formula-badge-3d">-- / (-- &times; 3)</span>
           </div>
           <div class="matrix-rate" id="matrix-rate-3d">--%</div>
+          <div class="matrix-meter-track">
+            <div class="matrix-meter-bar bar-3d" id="matrix-meter-3d" style="width: 0%;"></div>
+          </div>
           <div class="matrix-fraction" id="matrix-fraction-3d">-- / -- occupied nights</div>
           <div class="matrix-meta">
             <span>ADR: <strong id="matrix-adr-3d">₹--</strong></span>
@@ -318,7 +325,10 @@
           <h2 class="panel-title">Tracked Areas Comparison (Multi-Horizon)</h2>
           <p class="panel-subtitle">{{ areas|length }} Discovered Ahmedabad sub-market areas across Tonight (1D), Next 2D, and Next 3D horizons</p>
         </div>
-        <span class="badge-count" id="area-count-badge">{{ areas|length }} Discovered Areas</span>
+        <div class="table-header-actions">
+          <input type="text" id="area-search-input" class="form-input search-input area-search" placeholder="Filter areas (e.g. Bopal)...">
+          <span class="badge-count" id="area-count-badge">{{ areas|length }} Discovered Areas</span>
+        </div>
       </div>
       
       <div class="table-responsive">
@@ -337,7 +347,7 @@
           </thead>
           <tbody id="area-table-body">
             <tr>
-              <td colspan="9" class="text-center py-4 text-muted">Loading area market snapshots...</td>
+              <td colspan="8" class="text-center py-4 text-muted">Loading area market snapshots...</td>
             </tr>
           </tbody>
         </table>
@@ -348,11 +358,11 @@
     <section class="card-panel mt-6" id="listings-universe-panel">
       <div class="panel-header">
         <div>
-          <h2 class="panel-title">Master Listing Universe Sample</h2>
+          <h2 class="panel-title">Master Listing Universe Explorer</h2>
           <p class="panel-subtitle">Discovered stable listing records maintained across observation snapshots</p>
         </div>
         <div class="table-search-group">
-          <input type="text" id="listing-search-input" class="form-input search-input" placeholder="Search by title or ID...">
+          <input type="text" id="listing-search-input" class="form-input search-input" placeholder="Search by title, ID, or area...">
         </div>
       </div>
 
@@ -363,25 +373,53 @@
               <th>Listing ID</th>
               <th>Property Title</th>
               <th>Area</th>
-              <th>Property Type</th>
+              <th>Type</th>
               <th class="text-center">Criteria</th>
-              <th class="text-center" title="Occupancy for Tomorrow night (0/1 or 1/1)">Tonight (1D)</th>
-              <th class="text-center" title="Occupancy for Next 2 Days (0/2, 1/2, 2/2)">Next 2 Days</th>
-              <th class="text-center" title="Occupancy for Next 3 Days (0/3 to 3/3)">Next 3 Days</th>
-              <th class="text-center">Bedrooms</th>
-              <th class="text-center">Beds</th>
+              <th class="text-center" title="Occupancy for Tonight (0/1 or 1/1)">Tonight (1D)</th>
+              <th class="text-center" title="Occupancy for Next 2 Days (0/2, 1/2, 2/2)">Next 2D</th>
+              <th class="text-center" title="Occupancy for Next 3 Days (0/3 to 3/3)">Next 3D</th>
+              <th class="text-center">Config</th>
               <th class="text-center">Amenities</th>
               <th class="text-right">Rating</th>
               <th class="text-right">Reviews</th>
-              <th class="text-center">Airbnb Listing</th>
+              <th class="text-center">Airbnb</th>
             </tr>
           </thead>
           <tbody id="listings-table-body">
             <tr>
-              <td colspan="15" class="text-center py-4 text-muted">Loading listing universe...</td>
+              <td colspan="13" class="text-center py-4 text-muted">Loading listing universe...</td>
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- Professional Table Pagination Bar -->
+      <div class="table-pagination-bar" id="listings-pagination-bar">
+        <div class="pagination-info">
+          Showing <span id="pag-start" class="pag-highlight">0</span> to <span id="pag-end" class="pag-highlight">0</span> of <span id="pag-total" class="pag-highlight">0</span> listings
+        </div>
+        
+        <div class="pagination-controls">
+          <div class="pagination-page-size">
+            <label for="listings-page-size">Rows per page</label>
+            <div class="select-wrapper select-xs">
+              <select id="listings-page-size" class="form-select pagination-select">
+                <option value="15" selected>15</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="pagination-nav">
+            <button id="btn-page-first" class="btn-page-nav" title="First Page" disabled>&laquo;</button>
+            <button id="btn-page-prev" class="btn-page-nav" title="Previous Page" disabled>&lsaquo;</button>
+            <div class="pagination-pages" id="pagination-pages-container"></div>
+            <button id="btn-page-next" class="btn-page-nav" title="Next Page" disabled>&rsaquo;</button>
+            <button id="btn-page-last" class="btn-page-nav" title="Last Page" disabled>&raquo;</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -481,6 +519,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- App Logic JS -->
-  <script src="/static/js/app.js?v=4.0"></script>
+  <script src="/static/js/app.js?v=4.1"></script>
 </body>
 </html>

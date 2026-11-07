@@ -262,9 +262,41 @@ function initEventListeners() {
   const searchInput = document.getElementById('listing-search-input');
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
-      filterListingsTable(e.target.value.toLowerCase());
+      filterListingsTable(e.target.value);
     });
   }
+
+  // Area Comparison Search Input
+  const areaSearchInput = document.getElementById('area-search-input');
+  if (areaSearchInput) {
+    areaSearchInput.addEventListener('input', (e) => {
+      filterAreaComparisonTable(e.target.value);
+    });
+  }
+
+  // Listings Page Size Selector
+  const pageSizeSelect = document.getElementById('listings-page-size');
+  if (pageSizeSelect) {
+    pageSizeSelect.addEventListener('change', (e) => {
+      listingsPageSize = parseInt(e.target.value, 10) || 15;
+      currentListingPage = 1;
+      renderPaginatedListings();
+    });
+  }
+
+  // Pagination Navigation Buttons
+  const btnFirst = document.getElementById('btn-page-first');
+  const btnPrev = document.getElementById('btn-page-prev');
+  const btnNext = document.getElementById('btn-page-next');
+  const btnLast = document.getElementById('btn-page-last');
+
+  if (btnFirst) btnFirst.addEventListener('click', () => setListingPage(1));
+  if (btnPrev) btnPrev.addEventListener('click', () => setListingPage(currentListingPage - 1));
+  if (btnNext) btnNext.addEventListener('click', () => setListingPage(currentListingPage + 1));
+  if (btnLast) btnLast.addEventListener('click', () => {
+    const totalPages = Math.ceil(currentFilteredListings.length / listingsPageSize) || 1;
+    setListingPage(totalPages);
+  });
 }
 
 // 3. Load Overview KPIs & Multi-Horizon Matrix
@@ -319,8 +351,10 @@ async function loadDashboardData() {
         const nEl = document.getElementById(`matrix-nights-${k}`);
         const aEl = document.getElementById(`matrix-adr-${k}`);
         const rEl = document.getElementById(`matrix-revpar-${k}`);
+        const mEl = document.getElementById(`matrix-meter-${k}`);
         if (uEl) uEl.textContent = '--';
         if (pEl) pEl.style.width = '0%';
+        if (mEl) mEl.style.width = '0%';
         if (nEl) nEl.textContent = '--';
         if (aEl) aEl.textContent = 'ADR: --';
         if (rEl) rEl.textContent = 'RevPAR: --';
@@ -412,8 +446,10 @@ async function loadDashboardData() {
       const elFraction = document.getElementById(`matrix-fraction-${m.key}`);
       const elAdr = document.getElementById(`matrix-adr-${m.key}`);
       const elRevpar = document.getElementById(`matrix-revpar-${m.key}`);
+      const elMeter = document.getElementById(`matrix-meter-${m.key}`);
 
       if (elRate) elRate.textContent = `${ratePct}%`;
+      if (elMeter) elMeter.style.width = `${Math.min(100, Math.max(0, parseFloat(ratePct)))}%`;
       if (elFormula) elFormula.textContent = `Formula: ${nu.toLocaleString()} / (${(metric.active_listings || 0).toLocaleString()} × ${m.days})`;
       if (elFraction) elFraction.textContent = `${nu.toLocaleString()} / ${nt.toLocaleString()} occupied nights`;
       if (elAdr) elAdr.textContent = `₹${adrVal.toLocaleString()}`;
@@ -426,6 +462,71 @@ async function loadDashboardData() {
 }
 
 // 4. Area Comparison Table (Multi-Horizon: Tonight, 2D, 3D, 7D)
+let areaComparisonCache = [];
+
+function filterAreaComparisonTable(query) {
+  const cleanQ = (query || '').trim().toLowerCase();
+  if (!cleanQ) {
+    renderAreaComparisonTable(areaComparisonCache);
+  } else {
+    renderAreaComparisonTable(areaComparisonCache.filter(a => a.area && a.area.toLowerCase().includes(cleanQ)));
+  }
+}
+
+function renderAreaComparisonTable(areas) {
+  const tbody = document.getElementById('area-table-body');
+  if (!tbody) return;
+
+  if (!areas || areas.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-muted">No areas match the current filter</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = '';
+  areas.forEach(a => {
+    const tr = document.createElement('tr');
+    const u1 = ((a.unavailability_1d !== undefined ? a.unavailability_1d : a.observed_unavailability_rate) * 100).toFixed(1);
+    const u2 = ((a.unavailability_2d !== undefined ? a.unavailability_2d : a.observed_unavailability_rate) * 100).toFixed(1);
+    const u3 = ((a.unavailability_3d !== undefined ? a.unavailability_3d : a.observed_unavailability_rate) * 100).toFixed(1);
+
+    const nu1 = a.nights_unavail_1d !== undefined ? a.nights_unavail_1d : Math.round(a.active_listings * 1 * (u1/100));
+    const nt1 = a.nights_total_1d !== undefined ? a.nights_total_1d : (a.active_listings * 1);
+
+    const nu2 = a.nights_unavail_2d !== undefined ? a.nights_unavail_2d : Math.round(a.active_listings * 2 * (u2/100));
+    const nt2 = a.nights_total_2d !== undefined ? a.nights_total_2d : (a.active_listings * 2);
+
+    const nu3 = a.nights_unavail_3d !== undefined ? a.nights_unavail_3d : Math.round(a.active_listings * 3 * (u3/100));
+    const nt3 = a.nights_total_3d !== undefined ? a.nights_total_3d : (a.active_listings * 3);
+
+    const adrVal = Math.round(a.adr_1d || a.adr);
+    const revparVal = Math.round(a.revpar_1d || a.revpar_proxy);
+    const cov = ((a.coverage_rate || 1.0) * 100).toFixed(1);
+
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(a.area)}</strong></td>
+      <td class="text-right tabular-nums">${a.active_listings.toLocaleString()}</td>
+      <td class="text-right tabular-nums" title="Exact fraction: ${nu1}/${nt1} nights"><span class="cell-stat-val">${u1}%</span></td>
+      <td class="text-right tabular-nums" title="Exact fraction: ${nu2}/${nt2} nights"><span class="cell-stat-val">${u2}%</span></td>
+      <td class="text-right tabular-nums" title="Exact fraction: ${nu3}/${nt3} nights"><span class="cell-stat-val">${u3}%</span></td>
+      <td class="text-right tabular-nums">₹${adrVal.toLocaleString()}</td>
+      <td class="text-right tabular-nums" style="font-weight: 700; color: #f1f5f9;">₹${revparVal.toLocaleString()}</td>
+      <td class="text-center"><span class="coverage-status-pill ${a.status === 'COMPLETE' ? '' : 'partial'}">${cov}%</span></td>
+    `;
+    // Click row to switch area
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', () => {
+      const areaSelect = document.getElementById('area-select');
+      if (areaSelect) {
+        areaSelect.value = a.area;
+        loadDashboardData();
+        loadTrendsChart();
+        loadMasterListings();
+      }
+    });
+    tbody.appendChild(tr);
+  });
+}
+
 async function loadAreaComparison() {
   const dateInput = document.getElementById('obs-date-input');
   const date = dateInput ? dateInput.value : '';
@@ -458,54 +559,14 @@ async function loadAreaComparison() {
       areaSelect.value = currentVal;
     }
 
-    if (!data.areas || data.areas.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-muted">No area records for ${slot !== 'latest' ? slot + ' slot on ' : ''}${date || 'selected date'}</td></tr>`;
-      return;
+    areaComparisonCache = data.areas || [];
+    const areaSearchInput = document.getElementById('area-search-input');
+    const q = areaSearchInput ? areaSearchInput.value.trim().toLowerCase() : '';
+    if (q) {
+      renderAreaComparisonTable(areaComparisonCache.filter(a => a.area && a.area.toLowerCase().includes(q)));
+    } else {
+      renderAreaComparisonTable(areaComparisonCache);
     }
-
-    tbody.innerHTML = '';
-    data.areas.forEach(a => {
-      const tr = document.createElement('tr');
-      const u1 = ((a.unavailability_1d !== undefined ? a.unavailability_1d : a.observed_unavailability_rate) * 100).toFixed(1);
-      const u2 = ((a.unavailability_2d !== undefined ? a.unavailability_2d : a.observed_unavailability_rate) * 100).toFixed(1);
-      const u3 = ((a.unavailability_3d !== undefined ? a.unavailability_3d : a.observed_unavailability_rate) * 100).toFixed(1);
-
-      const nu1 = a.nights_unavail_1d !== undefined ? a.nights_unavail_1d : Math.round(a.active_listings * 1 * (u1/100));
-      const nt1 = a.nights_total_1d !== undefined ? a.nights_total_1d : (a.active_listings * 1);
-
-      const nu2 = a.nights_unavail_2d !== undefined ? a.nights_unavail_2d : Math.round(a.active_listings * 2 * (u2/100));
-      const nt2 = a.nights_total_2d !== undefined ? a.nights_total_2d : (a.active_listings * 2);
-
-      const nu3 = a.nights_unavail_3d !== undefined ? a.nights_unavail_3d : Math.round(a.active_listings * 3 * (u3/100));
-      const nt3 = a.nights_total_3d !== undefined ? a.nights_total_3d : (a.active_listings * 3);
-
-      const adrVal = Math.round(a.adr_1d || a.adr);
-      const revparVal = Math.round(a.revpar_1d || a.revpar_proxy);
-      const cov = ((a.coverage_rate || 1.0) * 100).toFixed(1);
-
-      tr.innerHTML = `
-        <td><strong>${a.area}</strong></td>
-        <td class="text-right">${a.active_listings.toLocaleString()}</td>
-        <td class="text-right" title="Exact fraction: ${nu1}/${nt1} nights"><strong style="color: #fbbf24;">${u1}%</strong></td>
-        <td class="text-right" title="Exact fraction: ${nu2}/${nt2} nights"><strong style="color: #38bdf8;">${u2}%</strong></td>
-        <td class="text-right" title="Exact fraction: ${nu3}/${nt3} nights"><strong style="color: #c084fc;">${u3}%</strong></td>
-        <td class="text-right">₹${adrVal.toLocaleString()}</td>
-        <td class="text-right" style="color: #c084fc; font-weight: 700;">₹${revparVal.toLocaleString()}</td>
-        <td class="text-center"><span class="coverage-status-pill ${a.status === 'COMPLETE' ? '' : 'partial'}">${cov}%</span></td>
-      `;
-      // Click row to switch area
-      tr.style.cursor = 'pointer';
-      tr.addEventListener('click', () => {
-        const areaSelect = document.getElementById('area-select');
-        if (areaSelect) {
-          areaSelect.value = a.area;
-          loadDashboardData();
-          loadTrendsChart();
-          loadMasterListings();
-        }
-      });
-      tbody.appendChild(tr);
-    });
 
   } catch (err) {
     console.error('Failed to load comparison table:', err);
@@ -540,7 +601,7 @@ async function loadTrendsChart() {
         badgeId: 'plot-badge-1d',
         label: 'Tonight (1D)',
         color: '#f59e0b',
-        gradientStart: 'rgba(245, 158, 11, 0.4)',
+        gradientStart: 'rgba(245, 158, 11, 0.2)',
         gradientEnd: 'rgba(245, 158, 11, 0.0)',
         getVal: (r) => {
           if (currentMetric === 'unavailability') return +( (r.unavailability_1d !== undefined ? r.unavailability_1d : r.observed_unavailability_rate) * 100).toFixed(1);
@@ -554,9 +615,9 @@ async function loadTrendsChart() {
         canvasId: 'chart-2d',
         badgeId: 'plot-badge-2d',
         label: 'Next 2 Days (2D)',
-        color: '#38bdf8',
-        gradientStart: 'rgba(56, 189, 248, 0.4)',
-        gradientEnd: 'rgba(56, 189, 248, 0.0)',
+        color: '#0ea5e9',
+        gradientStart: 'rgba(14, 165, 233, 0.2)',
+        gradientEnd: 'rgba(14, 165, 233, 0.0)',
         getVal: (r) => {
           if (currentMetric === 'unavailability') return +( (r.unavailability_2d !== undefined ? r.unavailability_2d : r.observed_unavailability_rate) * 100).toFixed(1);
           if (currentMetric === 'adr') return Math.round(r.adr_2d || r.adr);
@@ -569,9 +630,9 @@ async function loadTrendsChart() {
         canvasId: 'chart-3d',
         badgeId: 'plot-badge-3d',
         label: 'Next 3 Days (3D)',
-        color: '#c084fc',
-        gradientStart: 'rgba(192, 132, 252, 0.4)',
-        gradientEnd: 'rgba(192, 132, 252, 0.0)',
+        color: '#8b5cf6',
+        gradientStart: 'rgba(139, 92, 246, 0.2)',
+        gradientEnd: 'rgba(139, 92, 246, 0.0)',
         getVal: (r) => {
           if (currentMetric === 'unavailability') return +( (r.unavailability_3d !== undefined ? r.unavailability_3d : r.observed_unavailability_rate) * 100).toFixed(1);
           if (currentMetric === 'adr') return Math.round(r.adr_3d || r.adr);
@@ -712,8 +773,12 @@ async function loadTrendsChart() {
   }
 }
 
-// 6. Master Listing Universe Explorer
+// 6. Master Listing Universe Explorer & Pagination
 let masterListingsCache = [];
+let currentFilteredListings = [];
+let currentListingPage = 1;
+let listingsPageSize = 15;
+
 async function loadMasterListings() {
   const areaSelect = document.getElementById('area-select');
   const dateInput = document.getElementById('obs-date-input');
@@ -722,13 +787,98 @@ async function loadMasterListings() {
   const slot = getSelectedSlot();
 
   try {
-    const res = await fetch(`/api/listings?area=${encodeURIComponent(area)}&date=${encodeURIComponent(date)}&slot=${encodeURIComponent(slot)}&criteria=${encodeURIComponent(getSelectedCriteria())}&limit=100`);
+    const res = await fetch(`/api/listings?area=${encodeURIComponent(area)}&date=${encodeURIComponent(date)}&slot=${encodeURIComponent(slot)}&criteria=${encodeURIComponent(getSelectedCriteria())}&limit=500`);
     const data = await res.json();
     masterListingsCache = data.listings || [];
-    renderListingsTable(masterListingsCache);
+
+    const searchInput = document.getElementById('listing-search-input');
+    const q = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    if (q) {
+      currentFilteredListings = masterListingsCache.filter(l => 
+        (l.title && l.title.toLowerCase().includes(q)) ||
+        (l.listing_id && l.listing_id.toLowerCase().includes(q)) ||
+        (l.area && l.area.toLowerCase().includes(q))
+      );
+    } else {
+      currentFilteredListings = [...masterListingsCache];
+    }
+
+    currentListingPage = 1;
+    renderPaginatedListings();
   } catch (err) {
     console.error('Failed to load listings:', err);
   }
+}
+
+function setListingPage(page) {
+  const totalPages = Math.ceil(currentFilteredListings.length / listingsPageSize) || 1;
+  currentListingPage = Math.max(1, Math.min(page, totalPages));
+  renderPaginatedListings();
+}
+
+function renderPaginatedListings() {
+  const total = currentFilteredListings.length;
+  const totalPages = Math.ceil(total / listingsPageSize) || 1;
+  if (currentListingPage > totalPages) currentListingPage = totalPages;
+
+  const startIndex = (currentListingPage - 1) * listingsPageSize;
+  const endIndex = Math.min(startIndex + listingsPageSize, total);
+  const pageItems = currentFilteredListings.slice(startIndex, endIndex);
+
+  renderListingsTable(pageItems);
+  updatePaginationControls(startIndex, endIndex, total, totalPages);
+}
+
+function generatePageRange(current, total) {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, '...', total];
+  }
+  if (current >= total - 3) {
+    return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+  }
+  return [1, '...', current - 1, current, current + 1, '...', total];
+}
+
+function updatePaginationControls(start, end, total, totalPages) {
+  const pagStart = document.getElementById('pag-start');
+  const pagEnd = document.getElementById('pag-end');
+  const pagTotal = document.getElementById('pag-total');
+  const btnFirst = document.getElementById('btn-page-first');
+  const btnPrev = document.getElementById('btn-page-prev');
+  const btnNext = document.getElementById('btn-page-next');
+  const btnLast = document.getElementById('btn-page-last');
+  const pagesContainer = document.getElementById('pagination-pages-container');
+
+  if (pagStart) pagStart.textContent = total === 0 ? '0' : (start + 1).toLocaleString();
+  if (pagEnd) pagEnd.textContent = end.toLocaleString();
+  if (pagTotal) pagTotal.textContent = total.toLocaleString();
+
+  if (btnFirst) btnFirst.disabled = currentListingPage <= 1;
+  if (btnPrev) btnPrev.disabled = currentListingPage <= 1;
+  if (btnNext) btnNext.disabled = currentListingPage >= totalPages;
+  if (btnLast) btnLast.disabled = currentListingPage >= totalPages;
+
+  if (!pagesContainer) return;
+  pagesContainer.innerHTML = '';
+
+  const range = generatePageRange(currentListingPage, totalPages);
+  range.forEach(p => {
+    if (p === '...') {
+      const span = document.createElement('span');
+      span.className = 'page-pill ellipsis';
+      span.textContent = '…';
+      pagesContainer.appendChild(span);
+    } else {
+      const btn = document.createElement('button');
+      btn.className = `page-pill ${p === currentListingPage ? 'active' : ''}`;
+      btn.textContent = p;
+      btn.addEventListener('click', () => setListingPage(p));
+      pagesContainer.appendChild(btn);
+    }
+  });
 }
 
 function formatCriteriaBadge(minNights) {
@@ -758,7 +908,7 @@ function renderListingsTable(listings) {
   if (!tbody) return;
 
   if (listings.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="15" class="text-center py-4 text-muted">No listings matched.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="text-center py-4 text-muted">No listings matched.</td></tr>';
     return;
   }
 
@@ -770,25 +920,24 @@ function renderListingsTable(listings) {
     tr.innerHTML = `
       <td>
         <a href="${airbnbUrl}" target="_blank" rel="noopener noreferrer" class="listing-id-link" title="Open ${l.listing_id} on Airbnb">
-          <span style="font-family: monospace; font-size: 0.78rem;">${l.listing_id}</span>
+          <span class="mono-code">${l.listing_id}</span>
         </a>
       </td>
       <td>
         <a href="${airbnbUrl}" target="_blank" rel="noopener noreferrer" class="listing-title-link" title="Open listing on Airbnb">
-          <strong>${l.title || 'Apartment in Ahmedabad'}</strong>
+          <strong>${escapeHtml(l.title || 'Apartment in Ahmedabad')}</strong>
         </a>
       </td>
-      <td><span class="badge-count">${l.area}</span></td>
-      <td class="text-secondary">${l.property_type || 'Apartment'}</td>
+      <td><span class="badge-count">${escapeHtml(l.area || 'Ahmedabad')}</span></td>
+      <td class="text-secondary">${escapeHtml(l.property_type || 'Apartment')}</td>
       <td class="text-center">${formatCriteriaBadge(l.min_nights)}</td>
       <td class="text-center">${formatOccBadge(l.occ_1d, 1)}</td>
       <td class="text-center">${formatOccBadge(l.occ_2d, 2)}</td>
       <td class="text-center">${formatOccBadge(l.occ_3d, 3)}</td>
-      <td class="text-center"><strong>${l.bedrooms || 2} BHK</strong></td>
-      <td class="text-center">${l.beds || 2} Beds</td>
+      <td class="text-center"><span class="config-pill">${l.bedrooms || 2} BHK &bull; ${l.beds || 2} Beds</span></td>
       <td class="text-center"><span class="amenity-pill">📶 Wi-Fi</span> <span class="amenity-pill">❄️ AC</span></td>
-      <td class="text-right" style="font-weight: 600; color: #fbbf24;">${l.rating ? `★ ${Number(l.rating).toFixed(2)}` : '<span class="text-muted">—</span>'}</td>
-      <td class="text-right" style="font-weight: 600; color: #f1f5f9;">${l.review_count !== undefined && l.review_count !== null ? Number(l.review_count).toLocaleString() : '0'}</td>
+      <td class="text-right tabular-nums font-medium" style="color: #f1f5f9;">${l.rating ? '<span class="rating-star">★</span> ' + Number(l.rating).toFixed(2) : '<span class="text-muted">—</span>'}</td>
+      <td class="text-right tabular-nums text-secondary">${l.review_count !== undefined && l.review_count !== null ? Number(l.review_count).toLocaleString() : '0'}</td>
       <td class="text-center">
         <a href="${airbnbUrl}" target="_blank" rel="noopener noreferrer" class="airbnb-view-btn" title="View property on Airbnb">
           <span>Airbnb ↗</span>
@@ -803,40 +952,54 @@ let searchDebounceTimeout = null;
 function filterListingsTable(query) {
   const cleanQ = (query || '').trim();
   if (!cleanQ) {
-    renderListingsTable(masterListingsCache);
+    currentFilteredListings = [...masterListingsCache];
+    currentListingPage = 1;
+    renderPaginatedListings();
     return;
   }
 
   const qLower = cleanQ.toLowerCase();
-  const filtered = masterListingsCache.filter(l => 
+  currentFilteredListings = masterListingsCache.filter(l => 
     (l.title && l.title.toLowerCase().includes(qLower)) ||
     (l.listing_id && l.listing_id.toLowerCase().includes(qLower)) ||
     (l.area && l.area.toLowerCase().includes(qLower))
   );
 
-  // If local results exist, show them right away
-  if (filtered.length > 0) {
-    renderListingsTable(filtered);
-  }
+  currentListingPage = 1;
+  renderPaginatedListings();
 
   const dateInput = document.getElementById('obs-date-input');
   const date = dateInput ? dateInput.value : '';
 
-  // Also query backend (which searches the entire DB across all 40 areas or queries live Airbnb)
+  // Also query backend if user typed more
   clearTimeout(searchDebounceTimeout);
   searchDebounceTimeout = setTimeout(async () => {
     try {
-      const res = await fetch(`/api/listings?search=${encodeURIComponent(cleanQ)}&date=${encodeURIComponent(date)}&limit=50`);
+      const res = await fetch(`/api/listings?search=${encodeURIComponent(cleanQ)}&date=${encodeURIComponent(date)}&limit=100`);
       const data = await res.json();
       if (data.listings && data.listings.length > 0) {
-        renderListingsTable(data.listings);
-      } else if (filtered.length === 0) {
-        renderListingsTable([]);
+        const existingIds = new Set(masterListingsCache.map(l => l.listing_id));
+        let added = false;
+        data.listings.forEach(l => {
+          if (!existingIds.has(l.listing_id)) {
+            masterListingsCache.push(l);
+            existingIds.add(l.listing_id);
+            added = true;
+          }
+        });
+        if (added) {
+          currentFilteredListings = masterListingsCache.filter(l => 
+            (l.title && l.title.toLowerCase().includes(qLower)) ||
+            (l.listing_id && l.listing_id.toLowerCase().includes(qLower)) ||
+            (l.area && l.area.toLowerCase().includes(qLower))
+          );
+          renderPaginatedListings();
+        }
       }
     } catch (e) {
       console.error('Search error:', e);
     }
-  }, 250);
+  }, 350);
 }
 
 // 7. Auto-Refresh Monitor (checks every 30 seconds for 9 AM IST new snapshots)
