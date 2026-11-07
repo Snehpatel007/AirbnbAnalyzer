@@ -15,7 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="/static/css/styles.css?v=4.2">
+  <link rel="stylesheet" href="/static/css/styles.css?v=4.3">
 </head>
 <body class="dark-theme">
   <!-- Executive Backdrop Mesh -->
@@ -139,7 +139,7 @@
       <div class="kpi-card" id="card-active-listings">
         <div class="kpi-header">
           <span class="kpi-title">Active Listings</span>
-          <span class="kpi-icon">🏠</span>
+          <span class="kpi-badge neutral">Live Supply</span>
         </div>
         <div class="kpi-value" id="kpi-active-listings">--</div>
         <div class="kpi-footer">
@@ -152,7 +152,7 @@
       <div class="kpi-card" id="card-unavailability">
         <div class="kpi-header">
           <span class="kpi-title">Tonight's Unavailability Rate</span>
-          <span class="kpi-badge warning" title="Observed availability status for tonight's actual night">Single-Night Actual</span>
+          <span class="kpi-badge warning" title="Observed availability status for tonight's actual night">Single-Night</span>
         </div>
         <div class="kpi-value" id="kpi-unavailability">--%</div>
         <div class="kpi-footer">
@@ -174,10 +174,10 @@
       </div>
 
       <!-- Observed RevPAR Proxy -->
-      <div class="kpi-card highlight-card" id="card-revpar">
+      <div class="kpi-card" id="card-revpar">
         <div class="kpi-header">
           <span class="kpi-title">Tonight's RevPAR Proxy</span>
-          <span class="kpi-badge purple">Daily Performance</span>
+          <span class="kpi-badge purple">Performance</span>
         </div>
         <div class="kpi-value" id="kpi-revpar">₹--</div>
         <div class="kpi-footer">
@@ -549,6 +549,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- App Logic JS -->
-  <script src="/static/js/app.js?v=4.2"></script>
+  <script src="/static/js/app.js?v=4.3"></script>
 </body>
 </html>
