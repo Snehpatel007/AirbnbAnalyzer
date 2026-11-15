@@ -121,6 +121,18 @@ def test_check_and_heal_audit_failures():
         assert heal_res["refreshed_hashes"] == mock_hashes
 
 
+def test_api_audit_auto_heal_endpoint():
+    from src.web.app import app
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    resp = client.get("/api/audit/auto-heal")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "status" in data
+    assert data["status"] in ("HEALTHY", "HEALED", "COMPLETED")
+
+
 if __name__ == "__main__":
     import tempfile
     from pathlib import Path
