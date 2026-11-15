@@ -22,12 +22,19 @@ class DirectWebAirbnbProvider(AirbnbDataProvider):
     Integrates automatic guest session bootstrapping and resilient retry logic.
     """
 
+    DEFAULT_STAYS_SEARCH_HASH = "aec09eb74dbd01c4019adbb6b4fcc3cc2ca224457ebcc3a2219bb4f4f5c8f206"
+    DEFAULT_CALENDAR_HASH = "f959cc8f218edf71f437ad301eaa2ad974c62c5fbac8cc4a04611813e30d3fbd"
+    DEFAULT_CALENDAR_OPERATION = "PdpAvailabilityCalendarV2ExcludedQuery"
+
     def __init__(self, api_key: Optional[str] = None, bearer_token: Optional[str] = None, timeout_sec: float = 15.0):
         self.timeout_sec = timeout_sec
         self.session_data = session_manager.load_session()
         self.api_key = api_key or self.session_data.get("api_key") or getattr(settings, "airbnb_api_key", "d306zoyjsyarp7ifhu67rjxn52tv0t20")
         self.bearer_token = bearer_token or getattr(settings, "airbnb_bearer_token", None)
         self.cookies = self.session_data.get("cookies", {})
+        self.stays_search_hash = self.session_data.get("stays_search_hash") or self.DEFAULT_STAYS_SEARCH_HASH
+        self.calendar_hash = self.session_data.get("calendar_hash") or self.DEFAULT_CALENDAR_HASH
+        self.calendar_operation = self.session_data.get("calendar_operation") or self.DEFAULT_CALENDAR_OPERATION
         self.last_errors: List[str] = []
 
         self.headers = {
@@ -42,6 +49,35 @@ class DirectWebAirbnbProvider(AirbnbDataProvider):
         }
         if self.bearer_token:
             self.headers["Authorization"] = f"Bearer {self.bearer_token}"
+
+    def discover_live_operation_hash(self, operation_name: str, sample_page_url: str = "https://www.airbnb.co.in/s/Ahmedabad--Gujarat/homes") -> Optional[str]:
+        """
+        Dynamically extracts active query SHA256 operationId from Airbnb's frontend modules
+        when an operation rotation (deprecated_web_operation) occurs.
+        """
+        logger.info(f"Auto-resolving active operation hash for {operation_name} from live Airbnb frontend...")
+        try:
+            with httpx.Client(timeout=15.0, headers=self.headers, follow_redirects=True) as client:
+                resp = client.get(sample_page_url)
+                if resp.status_code != 200:
+                    return None
+                js_links = re.findall(r"https://a0\.muscache\.com/[^\"]+\.js", resp.text)
+                for u in js_links:
+                    try:
+                        r = client.get(u, timeout=6.0)
+                        if operation_name in r.text:
+                            m = re.search(r"name:[\x27\x22]" + re.escape(operation_name) + r"[\x27\x22][^}]+operationId:[\x27\x22]([a-f0-9]{64})[\x27\x22]", r.text)
+                            if not m:
+                                m = re.search(r"operationId:[\x27\x22]([a-f0-9]{64})[\x27\x22][^}]+name:[\x27\x22]" + re.escape(operation_name) + r"[\x27\x22]", r.text)
+                            if m:
+                                found = m.group(1)
+                                logger.info(f"Discovered active {operation_name} hash: {found}")
+                                return found
+                    except Exception:
+                        continue
+        except Exception as e:
+            logger.warning(f"Error discovering operation hash for {operation_name}: {e}")
+        return None
 
     def get_provider_name(self) -> str:
         return "DIRECT_AIRBNB_WEB"
@@ -167,12 +203,12 @@ class DirectWebAirbnbProvider(AirbnbDataProvider):
                     "extensions": {
                         "persistedQuery": {
                             "version": 1,
-                            "sha256Hash": "2aa7c66c6c086fabcadbfb48a19f6c742e07f4eaa3b430a2e4090d22585096cd",
+                            "sha256Hash": self.stays_search_hash,
                         }
                     },
                 }
 
-                url = "https://www.airbnb.co.in/api/v3/StaysSearch/2aa7c66c6c086fabcadbfb48a19f6c742e07f4eaa3b430a2e4090d22585096cd?operationName=StaysSearch&locale=en-IN&currency=INR"
+                url = f"https://www.airbnb.co.in/api/v3/StaysSearch/{self.stays_search_hash}?operationName=StaysSearch&locale=en-IN&currency=INR"
                 
                 resp = None
                 for attempt in range(3):
@@ -193,6 +229,17 @@ class DirectWebAirbnbProvider(AirbnbDataProvider):
                             self.last_errors.append(err_msg)
                             logger.warning(err_msg)
                             time.sleep(3.0)
+                        elif resp.status_code == 400 and "deprecated_web_operation" in resp.text:
+                            err_msg = f"StaysSearch hash {self.stays_search_hash[:10]}... deprecated by Airbnb. Auto-resolving live query hash..."
+                            self.last_errors.append(err_msg)
+                            logger.warning(err_msg)
+                            new_hash = self.discover_live_operation_hash("StaysSearch")
+                            if new_hash and new_hash != self.stays_search_hash:
+                                self.stays_search_hash = new_hash
+                                payload["extensions"]["persistedQuery"]["sha256Hash"] = new_hash
+                                url = f"https://www.airbnb.co.in/api/v3/StaysSearch/{new_hash}?operationName=StaysSearch&locale=en-IN&currency=INR"
+                                continue
+                            break
                         else:
                             err_msg = f"StaysSearch GraphQL API returned status {resp.status_code}"
                             self.last_errors.append(err_msg)
@@ -492,32 +539,33 @@ class DirectWebAirbnbProvider(AirbnbDataProvider):
         clean_id = str(listing_id).strip().replace("airbnb_", "").replace("ab_", "")
         today = datetime.now()
         target_dates = [(today + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(horizon_days)]
+        encoded_id = base64.b64encode(f"DemandStayListing:{clean_id}".encode()).decode()
 
         months_count = max(2, (horizon_days // 28) + 1)
         variables = {
-            "request": {
+            "listingId": encoded_id,
+            "input": {
                 "count": months_count,
-                "listingId": clean_id,
                 "month": today.month,
                 "year": today.year,
+                "returnPropertyLevelCalendarIfApplicable": False,
             }
         }
-        extensions = {
-            "persistedQuery": {
-                "version": 1,
-                "sha256Hash": "8f08e03c7bd16fcad3c92a3592c19a8b559a0d0855a84028d1163d4733ed9ade",
-            }
+        payload = {
+            "operationName": self.calendar_operation,
+            "variables": variables,
+            "extensions": {
+                "persistedQuery": {
+                    "version": 1,
+                    "sha256Hash": self.calendar_hash,
+                }
+            },
         }
-        params = {
-            "operationName": "PdpAvailabilityCalendar",
-            "locale": "en-IN",
-            "currency": "INR",
-            "variables": json.dumps(variables),
-            "extensions": json.dumps(extensions),
-        }
+        url = f"https://www.airbnb.co.in/api/v3/{self.calendar_operation}/{self.calendar_hash}?operationName={self.calendar_operation}&locale=en-IN&currency=INR"
         api_headers = {
             **self.headers,
-            "Accept": "application/json",
+            "Accept": "*/*",
+            "Content-Type": "application/json",
             "X-Airbnb-GraphQL-Platform": "web",
             "X-Airbnb-GraphQL-Platform-Client": "minimalist-niobe",
         }
@@ -525,12 +573,11 @@ class DirectWebAirbnbProvider(AirbnbDataProvider):
         try:
             with httpx.Client(timeout=self.timeout_sec, follow_redirects=True, headers=api_headers, cookies=self.cookies) as client:
                 for attempt in range(2):
-                    resp = client.get("https://www.airbnb.co.in/api/v3/PdpAvailabilityCalendar", params=params)
+                    resp = client.post(url, json=payload)
                     if resp.status_code == 200:
                         data = resp.json()
-                        data_obj = data.get("data") or {}
-                        merlin_obj = data_obj.get("merlin") or {}
-                        pdp_cal = merlin_obj.get("pdpAvailabilityCalendar") or {}
+                        node = (data.get("data") or {}).get("node") or {}
+                        pdp_cal = node.get("pdpAvailabilityCalendar") or (data.get("data") or {}).get("merlin", {}).get("pdpAvailabilityCalendar") or {}
                         months = pdp_cal.get("calendarMonths") or []
                         days_map = {}
                         for m in months:
@@ -544,9 +591,9 @@ class DirectWebAirbnbProvider(AirbnbDataProvider):
                             day_data = days_map.get(cal_dt)
                             if day_data:
                                 is_avail = bool(day_data.get("available", False))
-                                bookable = bool(day_data.get("bookable", False))
+                                bookable = bool(day_data.get("bookable", False)) if day_data.get("bookable") is not None else is_avail
                                 min_nights = int(day_data.get("minNights", 1) or 1)
-                                price_formatted = day_data.get("price", {}).get("localPriceFormatted")
+                                price_formatted = day_data.get("price", {}).get("localPriceFormatted") if isinstance(day_data.get("price"), dict) else None
                                 price_val = None
                                 if price_formatted:
                                     match = re.search(r"[\d,]+(?:\.\d+)?", str(price_formatted))
@@ -583,6 +630,15 @@ class DirectWebAirbnbProvider(AirbnbDataProvider):
                     elif resp.status_code == 429:
                         time.sleep(1.2)
                         continue
+                    elif resp.status_code == 400 and "deprecated_web_operation" in resp.text:
+                        logger.warning("Calendar operation hash deprecated. Attempting dynamic auto-discovery...")
+                        new_hash = self.discover_live_operation_hash(self.calendar_operation, sample_page_url=f"https://www.airbnb.co.in/rooms/{clean_id}")
+                        if new_hash and new_hash != self.calendar_hash:
+                            self.calendar_hash = new_hash
+                            payload["extensions"]["persistedQuery"]["sha256Hash"] = new_hash
+                            url = f"https://www.airbnb.co.in/api/v3/{self.calendar_operation}/{new_hash}?operationName={self.calendar_operation}&locale=en-IN&currency=INR"
+                            continue
+                        break
                     else:
                         logger.warning(
                             f"PdpAvailabilityCalendar returned HTTP {resp.status_code} for listing {clean_id}: {resp.text[:200]}"
@@ -598,40 +654,41 @@ class DirectWebAirbnbProvider(AirbnbDataProvider):
         """
         clean_id = str(listing_id).strip().replace("airbnb_", "").replace("ab_", "")
         today = datetime.now()
+        encoded_id = base64.b64encode(f"DemandStayListing:{clean_id}".encode()).decode()
         variables = {
-            "request": {
+            "listingId": encoded_id,
+            "input": {
                 "count": 1,
-                "listingId": clean_id,
                 "month": today.month,
                 "year": today.year,
+                "returnPropertyLevelCalendarIfApplicable": False,
             }
         }
-        extensions = {
-            "persistedQuery": {
-                "version": 1,
-                "sha256Hash": "8f08e03c7bd16fcad3c92a3592c19a8b559a0d0855a84028d1163d4733ed9ade",
-            }
+        payload = {
+            "operationName": self.calendar_operation,
+            "variables": variables,
+            "extensions": {
+                "persistedQuery": {
+                    "version": 1,
+                    "sha256Hash": self.calendar_hash,
+                }
+            },
         }
-        params = {
-            "operationName": "PdpAvailabilityCalendar",
-            "locale": "en-IN",
-            "currency": "INR",
-            "variables": json.dumps(variables),
-            "extensions": json.dumps(extensions),
-        }
+        url = f"https://www.airbnb.co.in/api/v3/{self.calendar_operation}/{self.calendar_hash}?operationName={self.calendar_operation}&locale=en-IN&currency=INR"
         api_headers = {
             **self.headers,
-            "Accept": "application/json",
+            "Accept": "*/*",
+            "Content-Type": "application/json",
             "X-Airbnb-GraphQL-Platform": "web",
             "X-Airbnb-GraphQL-Platform-Client": "minimalist-niobe",
         }
         try:
             with httpx.Client(timeout=10.0, follow_redirects=True, headers=api_headers, cookies=self.cookies) as client:
-                resp = client.get("https://www.airbnb.co.in/api/v3/PdpAvailabilityCalendar", params=params)
+                resp = client.post(url, json=payload)
                 if resp.status_code == 200:
                     data = resp.json()
-                    merlin_obj = (data.get("data") or {}).get("merlin") or {}
-                    pdp_cal = merlin_obj.get("pdpAvailabilityCalendar") or {}
+                    node = (data.get("data") or {}).get("node") or {}
+                    pdp_cal = node.get("pdpAvailabilityCalendar") or (data.get("data") or {}).get("merlin", {}).get("pdpAvailabilityCalendar") or {}
                     months = pdp_cal.get("calendarMonths") or []
                     for m in months:
                         for d in m.get("days", []):

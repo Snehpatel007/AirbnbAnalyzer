@@ -2,20 +2,25 @@
   "api_key": "d306zoyjsyarp7ifhu67rjxn52tv0t20",
   "cookies": {
     "_user_attributes": "%7B%22curr%22%3A%22INR%22%7D",
-    "bev": "1791124028_EAZjQ1ODhmY2RhMz",
-    "_airbed_session_id": "d1a6cb4986454701317d284138a45e48",
-    "datadome": "bx3VaVVx9_SMfYO9AVcg5tucGeoJo5n8d2W~uVDb7Qri7l3pggBTK_Qpqa5hpy8Ojox4cpygQXuhPJmrcX961yjAqT9hfk1DCW2KnGVMhhS3OIXlAgbOB~MigCXgJiwwc9dhC~de1_tH1r4S~R3HRG"
+    "bev": "1794766996_EAOWFiOWJmZDU3Nj",
+    "datadome": "ZuVAyW77sAf3QlGbc~rC4N~ZkcYLhhRvacB3JOaicKlqKDUAQA1tPom2yYsb4X8RCKTZ8dg_uuvI0X4FG8kbNqav7TZLeeMKExTEQyc_hiwMabWhLagc_mBtm_NwEsBkKw2Xl0JOcQL1f_18Vp2lhG",
+    "everest_cookie": "1794766996.EAOTk2YzI5YTkxMjZjMD.rSXIygxFwL-4yD5zdE0i945exvJ3bMxMSsZgapK3_aY",
+    "cdn_exp_1b22e00ef0d6e8269": "treatment",
+    "cdn_exp_42a50e32782850af8": "treatment",
+    "cdn_exp_8b3212ac1257da4a5": "treatment"
   },
   "headers": {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
     "Accept-Language": "en-IN,en;q=0.9",
     "Accept-Encoding": "gzip, deflate",
     "X-Airbnb-API-Key": "d306zoyjsyarp7ifhu67rjxn52tv0t20",
     "X-Airbnb-GraphQL-Platform": "web",
     "X-Airbnb-GraphQL-Platform-Client": "minimalist-niobe",
-    "X-Airbnb-Supports-Airlock-V2": "true",
     "X-CSRF-Without-Token": "1"
   },
-  "source": "USER_CURL_UPDATE",
-  "updated_at": "2026-11-06T01:58:00.000000"
+  "stays_search_hash": "aec09eb74dbd01c4019adbb6b4fcc3cc2ca224457ebcc3a2219bb4f4f5c8f206",
+  "calendar_hash": "f959cc8f218edf71f437ad301eaa2ad974c62c5fbac8cc4a04611813e30d3fbd",
+  "calendar_operation": "PdpAvailabilityCalendarV2ExcludedQuery",
+  "source": "AUTO_BOOTSTRAP",
+  "updated_at": "2026-11-15T18:23:17.336623"
 }

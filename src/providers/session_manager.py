@@ -91,6 +91,9 @@ class AirbnbSessionManager:
                 "X-Airbnb-GraphQL-Platform-Client": "minimalist-niobe",
                 "X-CSRF-Without-Token": "1",
             },
+            "stays_search_hash": "aec09eb74dbd01c4019adbb6b4fcc3cc2ca224457ebcc3a2219bb4f4f5c8f206",
+            "calendar_hash": "f959cc8f218edf71f437ad301eaa2ad974c62c5fbac8cc4a04611813e30d3fbd",
+            "calendar_operation": "PdpAvailabilityCalendarV2ExcludedQuery",
             "source": "AUTO_BOOTSTRAP",
             "updated_at": datetime.utcnow().isoformat(),
         }
@@ -139,19 +142,32 @@ class AirbnbSessionManager:
                     cookies[ck.strip()] = cv.strip()
 
         # Check for persistedQuery sha256Hash
+        stays_hash = None
+        cal_hash = None
+        cal_op = None
+
         hash_match = re.search(r"StaysSearch/([a-f0-9]{64})", curl_cmd)
         if hash_match:
             query_hash = hash_match.group(1)
+            stays_hash = query_hash
         else:
             hash_match2 = re.search(r'"sha256Hash"\s*:\s*"([a-f0-9]{64})"', curl_cmd)
             if hash_match2:
                 query_hash = hash_match2.group(1)
+
+        cal_match = re.search(r"(PdpAvailabilityCalendar[a-zA-Z0-9_]*)/([a-f0-9]{64})", curl_cmd)
+        if cal_match:
+            cal_op = cal_match.group(1)
+            cal_hash = cal_match.group(2)
 
         session_data = {
             "api_key": api_key,
             "cookies": cookies,
             "headers": headers,
             "query_hash": query_hash,
+            "stays_search_hash": stays_hash or "aec09eb74dbd01c4019adbb6b4fcc3cc2ca224457ebcc3a2219bb4f4f5c8f206",
+            "calendar_hash": cal_hash or "f959cc8f218edf71f437ad301eaa2ad974c62c5fbac8cc4a04611813e30d3fbd",
+            "calendar_operation": cal_op or "PdpAvailabilityCalendarV2ExcludedQuery",
             "source": "DEVTOOLS_CURL_IMPORT",
             "updated_at": datetime.utcnow().isoformat(),
         }
