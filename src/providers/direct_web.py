@@ -50,34 +50,96 @@ class DirectWebAirbnbProvider(AirbnbDataProvider):
         if self.bearer_token:
             self.headers["Authorization"] = f"Bearer {self.bearer_token}"
 
-    def discover_live_operation_hash(self, operation_name: str, sample_page_url: str = "https://www.airbnb.co.in/s/Ahmedabad--Gujarat/homes") -> Optional[str]:
+    def discover_live_operation_hash(self, operation_name: str, sample_page_url: Optional[str] = None) -> Optional[str]:
         """
         Dynamically extracts active query SHA256 operationId from Airbnb's frontend modules
         when an operation rotation (deprecated_web_operation) occurs.
         """
+        if sample_page_url:
+            urls_to_try = [sample_page_url]
+        elif "calendar" in operation_name.lower():
+            urls_to_try = [
+                "https://www.airbnb.co.in/rooms/1461663615781276370",
+                "https://www.airbnb.co.in/s/Ahmedabad--Gujarat/homes",
+            ]
+        else:
+            urls_to_try = [
+                "https://www.airbnb.co.in/s/Ahmedabad--Gujarat/homes",
+                "https://www.airbnb.co.in",
+            ]
+
         logger.info(f"Auto-resolving active operation hash for {operation_name} from live Airbnb frontend...")
         try:
             with httpx.Client(timeout=15.0, headers=self.headers, follow_redirects=True) as client:
-                resp = client.get(sample_page_url)
-                if resp.status_code != 200:
-                    return None
-                js_links = re.findall(r"https://a0\.muscache\.com/[^\"]+\.js", resp.text)
-                for u in js_links:
+                for page_url in urls_to_try:
                     try:
-                        r = client.get(u, timeout=6.0)
-                        if operation_name in r.text:
-                            m = re.search(r"name:[\x27\x22]" + re.escape(operation_name) + r"[\x27\x22][^}]+operationId:[\x27\x22]([a-f0-9]{64})[\x27\x22]", r.text)
-                            if not m:
-                                m = re.search(r"operationId:[\x27\x22]([a-f0-9]{64})[\x27\x22][^}]+name:[\x27\x22]" + re.escape(operation_name) + r"[\x27\x22]", r.text)
-                            if m:
-                                found = m.group(1)
-                                logger.info(f"Discovered active {operation_name} hash: {found}")
-                                return found
+                        resp = client.get(page_url)
+                        if resp.status_code != 200:
+                            continue
+                        js_links = re.findall(r"https://a0\.muscache\.com/[^\"]+\.js", resp.text)
+                        for u in js_links:
+                            try:
+                                r = client.get(u, timeout=6.0)
+                                if operation_name in r.text:
+                                    m = re.search(r"name:[\x27\x22]" + re.escape(operation_name) + r"[\x27\x22][^}]+operationId:[\x27\x22]([a-f0-9]{64})[\x27\x22]", r.text)
+                                    if not m:
+                                        m = re.search(r"operationId:[\x27\x22]([a-f0-9]{64})[\x27\x22][^}]+name:[\x27\x22]" + re.escape(operation_name) + r"[\x27\x22]", r.text)
+                                    if m:
+                                        found = m.group(1)
+                                        logger.info(f"Discovered active {operation_name} hash: {found}")
+                                        # Automatically update session cache with the fresh operation hash
+                                        if operation_name == "StaysSearch" or "stays" in operation_name.lower():
+                                            session_manager.update_operation_hashes(stays_hash=found)
+                                        elif "calendar" in operation_name.lower():
+                                            session_manager.update_operation_hashes(cal_hash=found, cal_op=operation_name)
+                                        return found
+                            except Exception:
+                                continue
                     except Exception:
                         continue
         except Exception as e:
             logger.warning(f"Error discovering operation hash for {operation_name}: {e}")
         return None
+
+    @classmethod
+    def discover_and_update_all_hashes(cls) -> Dict[str, str]:
+        """
+        Dynamically extracts active query hashes for both StaysSearch and Calendar operations
+        from live Airbnb frontend JS modules and persists them into session_manager.
+        Returns a dict containing the refreshed active hashes.
+        """
+        instance = cls()
+        updated: Dict[str, str] = {}
+        
+        # 1. StaysSearch hash
+        new_stays = instance.discover_live_operation_hash("StaysSearch")
+        if new_stays:
+            updated["stays_search_hash"] = new_stays
+            instance.stays_search_hash = new_stays
+
+        # 2. Calendar hash
+        new_cal = instance.discover_live_operation_hash("PdpAvailabilityCalendarV2ExcludedQuery")
+        if new_cal:
+            updated["calendar_hash"] = new_cal
+            updated["calendar_operation"] = "PdpAvailabilityCalendarV2ExcludedQuery"
+            instance.calendar_hash = new_cal
+            instance.calendar_operation = "PdpAvailabilityCalendarV2ExcludedQuery"
+        else:
+            fallback_cal = instance.discover_live_operation_hash("PdpAvailabilityCalendar")
+            if fallback_cal:
+                updated["calendar_hash"] = fallback_cal
+                updated["calendar_operation"] = "PdpAvailabilityCalendar"
+                instance.calendar_hash = fallback_cal
+                instance.calendar_operation = "PdpAvailabilityCalendar"
+
+        if updated:
+            session_manager.update_operation_hashes(
+                stays_hash=updated.get("stays_search_hash"),
+                cal_hash=updated.get("calendar_hash"),
+                cal_op=updated.get("calendar_operation")
+            )
+            logger.info(f"Dynamic auto-heal refreshed active hashes: {updated}")
+        return updated
 
     def get_provider_name(self) -> str:
         return "DIRECT_AIRBNB_WEB"

@@ -5,7 +5,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 import pytz
 from config.settings import settings
-from src.pipeline.collector import MarketCollector
+from src.pipeline.collector import MarketCollector, check_and_heal_audit_failures
 
 logger = logging.getLogger("airbnbanalyzer.scheduler")
 
@@ -14,6 +14,7 @@ def scheduled_slot_ingestion(slot: str = "manual"):
     """
     Job executed automatically on schedule for a specific collection slot:
     '4pm' (16:00 IST), '8pm' (20:00 IST), '11.30pm' (23:30 IST), or 'manual'.
+    Includes automatic failure detection and self-healing for deprecated GraphQL query hashes.
     """
     kolkata_tz = pytz.timezone(settings.market_config.timezone)
     now_ist = datetime.now(kolkata_tz)
@@ -23,10 +24,47 @@ def scheduled_slot_ingestion(slot: str = "manual"):
     try:
         collector = MarketCollector(observation_date=today_str, snapshot_slot=slot)
         result = collector.run()
+        
+        # If the run resulted in partial coverage or failure, inspect audit logs for self-healing
+        if result and result.get("status") in ("FAILED", "PARTIAL"):
+            logger.warning(
+                f"Scheduled {slot} run completed with status [{result.get('status')}]. "
+                f"Checking audit log for deprecation error self-healing..."
+            )
+            heal_res = check_and_heal_audit_failures(max_runs_to_check=3)
+            if heal_res.get("healed_count", 0) > 0:
+                logger.info(f"Auto-heal successfully recovered runs: {heal_res}")
+                return heal_res.get("healed_runs", [result])[-1]
+
         logger.info(f"Scheduled {slot} collection run completed successfully: {result}")
         return result
     except Exception as e:
         logger.error(f"Error during scheduled {slot} collection: {e}", exc_info=True)
+        # Attempt audit auto-healing in case failure was caused by query deprecation
+        try:
+            logger.info("Triggering emergency audit failure auto-heal check...")
+            heal_res = check_and_heal_audit_failures(max_runs_to_check=3)
+            if heal_res.get("healed_count", 0) > 0:
+                logger.info(f"Emergency auto-heal recovered run after error: {heal_res}")
+                return heal_res.get("healed_runs", [None])[-1]
+        except Exception as heal_err:
+            logger.error(f"Error during emergency auto-heal: {heal_err}")
+        return None
+
+
+def scheduled_audit_auto_heal_check():
+    """
+    Periodic self-healing monitor job that inspects recent audit logs.
+    If any recent run failed due to rotated/deprecated query hashes, it automatically
+    extracts the newest hashes from Airbnb's live frontend and re-executes ingestion.
+    """
+    try:
+        heal_res = check_and_heal_audit_failures(max_runs_to_check=5)
+        if heal_res.get("healed_count", 0) > 0:
+            logger.info(f"Scheduled audit auto-heal monitor recovered {heal_res.get('healed_count')} run(s): {heal_res}")
+        return heal_res
+    except Exception as e:
+        logger.error(f"Error in scheduled audit auto-heal monitor: {e}", exc_info=True)
         return None
 
 
@@ -80,9 +118,19 @@ class MarketScheduler:
             coalesce=True,
         )
 
+        # Periodic auto-heal monitor: verifies recent audit logs every 60 minutes
+        self.scheduler.add_job(
+            scheduled_audit_auto_heal_check,
+            trigger=IntervalTrigger(minutes=60, timezone=self.timezone),
+            id="audit_auto_heal_monitor",
+            name="Hourly Audit Self-Healing Monitor",
+            replace_existing=True,
+            coalesce=True,
+        )
+
         self.scheduler.start()
         logger.info(
-            f"MarketScheduler started with 3 daily scheduled ingestion runs: 4:00 PM, 8:00 PM, and 11:30 PM {settings.market_config.timezone}."
+            f"MarketScheduler started with 3 daily scheduled ingestion runs (4:00 PM, 8:00 PM, 11:30 PM {settings.market_config.timezone}) and hourly audit self-healing."
         )
 
     def schedule_interval_job(self, minutes: int = 5, delay_minutes: int = 2):

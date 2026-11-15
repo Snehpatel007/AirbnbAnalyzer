@@ -828,6 +828,24 @@ def get_collection_runs(
     return {"runs": [r.to_dict() for r in runs]}
 
 
+@app.get("/api/audit/auto-heal")
+@app.post("/api/audit/auto-heal")
+def api_audit_auto_heal(
+    force: bool = Query(False, description="Force extraction of active query hashes and re-run ingestion even if no 400 error in recent audit"),
+    max_runs: int = Query(5, description="Number of recent collection runs to inspect"),
+    db: Session = Depends(get_db)
+):
+    """
+    Automated Audit Failure Recovery:
+    Inspects recent collection runs for deprecation failures (status 400 / deprecated_web_operation).
+    When detected, automatically extracts latest active GraphQL query hashes from live Airbnb frontend
+    and re-runs ingestion.
+    """
+    from src.pipeline.collector import check_and_heal_audit_failures
+    result = check_and_heal_audit_failures(db=db, max_runs_to_check=max_runs, force=force)
+    return result
+
+
 @app.get("/api/daily-report")
 def get_daily_report(
     date: Optional[str] = Query(None),

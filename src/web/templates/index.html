@@ -516,9 +516,14 @@
   <!-- Collection Runs Audit Modal -->
   <div class="report-modal-overlay" id="runs-modal-overlay">
     <div class="report-modal-card" style="max-width: 900px;">
-      <div class="report-modal-header">
+      <div class="report-modal-header" style="display: flex; justify-content: space-between; align-items: center;">
         <h3 class="report-title">Historical Ingestion Audit Log</h3>
-        <button id="btn-close-runs" class="btn-close">&times;</button>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button id="btn-auto-heal-runs" class="btn btn-secondary" style="font-size: 0.78rem; padding: 4px 10px;" title="Extract latest active GraphQL hashes from Airbnb and re-ingest failed runs">
+            <span>🔄 Auto-Heal</span>
+          </button>
+          <button id="btn-close-runs" class="btn-close">&times;</button>
+        </div>
       </div>
       <div class="report-modal-body">
         <div class="table-responsive">

@@ -216,10 +216,36 @@ function initEventListeners() {
   const btnRuns = document.getElementById('btn-view-runs');
   const modalRuns = document.getElementById('runs-modal-overlay');
   const btnCloseRuns = document.getElementById('btn-close-runs');
+  const btnAutoHeal = document.getElementById('btn-auto-heal-runs');
 
   if (btnRuns && modalRuns) {
     btnRuns.addEventListener('click', openRunsAudit);
     if (btnCloseRuns) btnCloseRuns.addEventListener('click', () => modalRuns.classList.remove('open'));
+  }
+
+  if (btnAutoHeal) {
+    btnAutoHeal.addEventListener('click', async () => {
+      btnAutoHeal.disabled = true;
+      btnAutoHeal.innerHTML = '<span>⏳ Healing...</span>';
+      showToast('Extracting active query hashes & recovering runs...', 'info');
+      try {
+        const resp = await fetch('/api/audit/auto-heal', { method: 'POST' });
+        const res = await resp.json();
+        if (res.status === 'HEALED') {
+          showToast(`✅ Recovered ${res.healed_count} run(s) with refreshed active query hashes!`, 'success');
+        } else if (res.status === 'HEALTHY') {
+          showToast('✅ Recent runs are healthy: No deprecation errors.', 'success');
+        } else {
+          showToast(res.message || 'Auto-heal check completed.', 'info');
+        }
+        await openRunsAudit();
+      } catch (err) {
+        showToast('Error during auto-heal: ' + err.message, 'error');
+      } finally {
+        btnAutoHeal.disabled = false;
+        btnAutoHeal.innerHTML = '<span>🔄 Auto-Heal</span>';
+      }
+    });
   }
 
   // AI Analyst Drawer / Modal

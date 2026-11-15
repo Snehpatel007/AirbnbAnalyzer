@@ -110,6 +110,37 @@ class AirbnbSessionManager:
         except Exception as e:
             logger.error(f"Failed to persist session to {self.session_path}: {e}")
 
+    def update_operation_hashes(
+        self,
+        stays_hash: Optional[str] = None,
+        cal_hash: Optional[str] = None,
+        cal_op: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Updates and persists active GraphQL query operation hashes into cached session.
+        Ensures future ingestion runs automatically utilize active live hashes.
+        """
+        data = self.load_session()
+        changed = False
+        if stays_hash and len(stays_hash) == 64:
+            data["stays_search_hash"] = stays_hash
+            data["query_hash"] = stays_hash
+            changed = True
+        if cal_hash and len(cal_hash) == 64:
+            data["calendar_hash"] = cal_hash
+            changed = True
+        if cal_op:
+            data["calendar_operation"] = cal_op
+            changed = True
+        if changed:
+            data["updated_at"] = datetime.utcnow().isoformat()
+            self.save_session(data)
+            logger.info(
+                f"Persisted updated operation hashes: stays={str(data.get('stays_search_hash'))[:8]}... "
+                f"cal={str(data.get('calendar_hash'))[:8]}... op={data.get('calendar_operation')}"
+            )
+        return data
+
     def update_from_curl(self, curl_cmd: str) -> Dict[str, Any]:
         """
         Parses a cURL command captured from browser DevTools, extracts all headers,

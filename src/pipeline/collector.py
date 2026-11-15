@@ -53,6 +53,7 @@ class MarketCollector:
         provider_name: Optional[str] = None,
         fetch_individual_calendars: Optional[bool] = None,
         snapshot_slot: Optional[str] = "manual",
+        auto_heal_retry: bool = False,
     ):
         self.db = db or SessionLocal()
         self._owns_db = db is None
@@ -69,6 +70,23 @@ class MarketCollector:
             fetch_individual_calendars
             if fetch_individual_calendars is not None
             else getattr(settings, "fetch_individual_calendars", False)
+        )
+        self.auto_heal_retry = auto_heal_retry
+
+    @staticmethod
+    def is_deprecation_error(err_str: Any) -> bool:
+        """
+        Determines if an error string matches an expired or deprecated Airbnb GraphQL query hash
+        (such as HTTP 400 deprecated_web_operation).
+        """
+        s = str(err_str).lower()
+        return (
+            "deprecated_web_operation" in s
+            or "deprecated by airbnb" in s
+            or ("400" in s and any(k in s for k in ("stayssearch", "calendar", "pdp", "graphql", "status", "http")))
+            or "operationid" in s
+            or "persistedquery" in s
+            or "auto-resolving live query hash" in s
         )
 
     def run(self) -> Dict:
@@ -332,6 +350,26 @@ class MarketCollector:
                 if not errors:
                     errors.append("No listings discovered: check network connectivity or Airbnb session authentication.")
 
+            # Automatic Self-Healing for Deprecated Operation Hashes
+            has_dep = any(MarketCollector.is_deprecation_error(e) for e in errors)
+            if (run_status in ("PARTIAL", "FAILED") or coverage_pct < 80.0 or observed_listings_total == 0) and has_dep and not self.auto_heal_retry:
+                print(
+                    f"⚠️ Ingestion audit indicates deprecation failure for {self.observation_date} [{self.snapshot_slot}] "
+                    f"(coverage {coverage_pct}%, {len(errors)} errors). Triggering live hash extraction & re-ingestion...",
+                    flush=True
+                )
+                run_record.status = "AUTO_HEALING"
+                run_record.errors = json.dumps((errors + ["Auto-healing triggered: discovering live query hashes and re-executing ingestion"])[:50])
+                self.db.commit()
+
+                from src.providers.direct_web import DirectWebAirbnbProvider
+                refreshed = DirectWebAirbnbProvider.discover_and_update_all_hashes()
+                print(f"🔄 Refreshed active query hashes: {refreshed}. Re-running ingestion pipeline now...", flush=True)
+
+                self.provider = get_data_provider(provider_type=self.provider.get_provider_name(), observation_date=self.observation_date)
+                self.auto_heal_retry = True
+                return self.run()
+
             run_record.completed_at = datetime.utcnow()
             run_record.status = run_status
             run_record.listings_discovered = total_discovered
@@ -362,3 +400,109 @@ class MarketCollector:
         finally:
             if self._owns_db:
                 self.db.close()
+
+
+def check_and_heal_audit_failures(
+    db: Optional[Session] = None,
+    max_runs_to_check: int = 5,
+    force: bool = False
+) -> Dict:
+    """
+    Scans recent CollectionRun audit logs for runs that failed or completed partially
+    due to deprecated GraphQL query hashes (HTTP 400 / deprecated_web_operation).
+
+    When an audit failure is detected:
+    1. Extracts latest active GraphQL query hashes from live Airbnb frontend modules.
+    2. Updates persistent session storage in config/airbnb_session.json.
+    3. Re-runs ingestion for the affected observation date(s) and slot(s).
+    4. Records the resolution in the audit log.
+    """
+    owns_db = db is None
+    session = db or SessionLocal()
+    healed_runs = []
+    failed_runs_detected = []
+    refreshed_hashes = {}
+
+    try:
+        recent_runs = (
+            session.query(CollectionRun)
+            .order_by(CollectionRun.started_at.desc())
+            .limit(max_runs_to_check)
+            .all()
+        )
+
+        for r in recent_runs:
+            is_candidate = (
+                r.status in ("FAILED", "PARTIAL")
+                or (r.coverage_pct is not None and r.coverage_pct < 80.0)
+                or (r.listings_discovered is not None and r.listings_discovered == 0)
+            )
+            if not is_candidate and not force:
+                continue
+
+            errs = []
+            if r.errors:
+                try:
+                    parsed = json.loads(r.errors)
+                    errs = parsed if isinstance(parsed, list) else [str(parsed)]
+                except Exception:
+                    errs = [str(r.errors)]
+
+            has_dep = any(MarketCollector.is_deprecation_error(e) for e in errs)
+            if has_dep or force:
+                failed_runs_detected.append({
+                    "run_id": r.run_id,
+                    "date": r.observation_date,
+                    "slot": r.snapshot_slot,
+                    "status": r.status,
+                    "coverage_pct": r.coverage_pct,
+                    "errors": errs[:3]
+                })
+
+        if not failed_runs_detected and not force:
+            return {
+                "status": "HEALTHY",
+                "message": "All recent collection runs are healthy or no deprecation failures found in audit log.",
+                "checked_runs_count": len(recent_runs),
+                "failed_runs_detected": 0,
+                "healed_count": 0,
+                "healed_runs": []
+            }
+
+        # Step 1: Extract latest active query hashes from live Airbnb frontend
+        print(f"🔍 Audit failure check: {len(failed_runs_detected)} run(s) flagged with deprecation. Extracting live query hashes...", flush=True)
+        from src.providers.direct_web import DirectWebAirbnbProvider
+        refreshed_hashes = DirectWebAirbnbProvider.discover_and_update_all_hashes()
+
+        # Step 2: Re-run ingestion for affected unique (date, slot) pairs
+        slots_to_heal = set()
+        for f in failed_runs_detected:
+            slots_to_heal.add((f["date"], f["slot"]))
+
+        # If forced without flagged runs, heal current date and slot
+        if force and not slots_to_heal:
+            slots_to_heal.add((get_ist_today(), "manual"))
+
+        for obs_date, slot in sorted(list(slots_to_heal)):
+            print(f"🔄 Auto-healing ingestion for date={obs_date} slot={slot}...", flush=True)
+            collector = MarketCollector(
+                db=session,
+                observation_date=obs_date,
+                snapshot_slot=slot,
+                auto_heal_retry=True
+            )
+            heal_result = collector.run()
+            healed_runs.append(heal_result)
+
+        return {
+            "status": "HEALED" if healed_runs else "COMPLETED",
+            "message": f"Successfully auto-healed {len(healed_runs)} run(s) after extracting latest active query hashes.",
+            "refreshed_hashes": refreshed_hashes,
+            "failed_runs_detected": len(failed_runs_detected),
+            "healed_count": len(healed_runs),
+            "healed_runs": healed_runs
+        }
+
+    finally:
+        if owns_db:
+            session.close()
