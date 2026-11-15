@@ -40,6 +40,11 @@ def main():
     auth_parser.add_argument("--curl", help="Raw DevTools curl command string", default=None)
     auth_parser.add_argument("--bootstrap", action="store_true", help="Auto-bootstrap fresh guest session from Airbnb")
 
+    # Command: auto-heal
+    auto_heal_parser = subparsers.add_parser("auto-heal", help="Inspect audit logs and auto-heal failures from deprecated query hashes")
+    auto_heal_parser.add_argument("--force", action="store_true", help="Force active query hash extraction and re-ingest")
+    auto_heal_parser.add_argument("--runs", type=int, default=5, help="Number of recent runs to check")
+
     args = parser.parse_args()
 
     init_db()
@@ -80,6 +85,12 @@ def main():
         else:
             res = session_manager.bootstrap_guest_session()
             print(f"✅ Successfully bootstrapped guest session ({len(res.get('cookies', {}))} cookies extracted).")
+
+    elif command == "auto-heal":
+        from src.pipeline.collector import check_and_heal_audit_failures
+        print(f"🔍 Inspecting audit logs for deprecation failures (checking last {args.runs} runs)...")
+        res = check_and_heal_audit_failures(max_runs_to_check=args.runs, force=args.force)
+        print("Auto-heal outcome:", res)
 
 
 if __name__ == "__main__":
