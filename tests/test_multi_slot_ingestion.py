@@ -233,6 +233,11 @@ def test_api_slot_filtering_and_available_slots(in_memory_db):
         res_active = client.get("/api/trigger-collection?slot=8pm&date=2026-10-24")
         assert res_active.status_code == 200
         assert res_active.json()["status"] == "ALREADY_RUNNING"
+
+        # Cleanup range test
+        res_clean = client.post("/api/admin/cleanup-range?max_date=2026-10-24&dates=2026-11-14,2026-11-15")
+        assert res_clean.status_code == 200
+        assert res_clean.json()["status"] == "SUCCESS"
     finally:
         app.dependency_overrides.clear()
 

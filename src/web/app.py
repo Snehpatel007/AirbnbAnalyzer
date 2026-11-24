@@ -977,6 +977,39 @@ def cleanup_observation_date(
     }
 
 
+@app.post("/api/admin/cleanup-range")
+def cleanup_observation_range(
+    max_date: Optional[str] = Query(None, description="Delete all records on or before this observation_date (YYYY-MM-DD)"),
+    dates: Optional[str] = Query(None, description="Comma-separated specific dates to delete (e.g. 2026-11-14,2026-11-15)"),
+    db: Session = Depends(get_db)
+):
+    del_cal_total = 0
+    del_metric_total = 0
+    del_runs_total = 0
+
+    if max_date:
+        del_cal_total += db.query(CalendarObservation).filter(CalendarObservation.observation_date <= max_date).delete(synchronize_session=False)
+        del_metric_total += db.query(DailyMarketMetric).filter(DailyMarketMetric.observation_date <= max_date).delete(synchronize_session=False)
+        del_runs_total += db.query(CollectionRun).filter(CollectionRun.observation_date <= max_date).delete(synchronize_session=False)
+
+    if dates:
+        date_list = [d.strip() for d in dates.split(",") if d.strip()]
+        if date_list:
+            del_cal_total += db.query(CalendarObservation).filter(CalendarObservation.observation_date.in_(date_list)).delete(synchronize_session=False)
+            del_metric_total += db.query(DailyMarketMetric).filter(DailyMarketMetric.observation_date.in_(date_list)).delete(synchronize_session=False)
+            del_runs_total += db.query(CollectionRun).filter(CollectionRun.observation_date.in_(date_list)).delete(synchronize_session=False)
+
+    db.commit()
+    return {
+        "status": "SUCCESS",
+        "max_date": max_date,
+        "specific_dates": dates,
+        "deleted_calendar_observations": del_cal_total,
+        "deleted_metrics": del_metric_total,
+        "deleted_runs": del_runs_total
+    }
+
+
 @app.post("/api/ai-query", response_model=NaturalLanguageQueryResponse)
 def execute_natural_language_query(
     payload: NaturalLanguageQueryRequest,
